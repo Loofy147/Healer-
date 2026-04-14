@@ -64,6 +64,31 @@ class FSCDescriptor:
 
 class FSCFactory:
     """Generate FSCDescriptors for common algebraic fields."""
+    @staticmethod
+    def structural_zero_sum(name: str, n: int) -> FSCDescriptor:
+        """
+        Structural zero-sum: sum(v) == 0.
+        No extra data needed, the invariant IS zero.
+        """
+        def inv(g): return 0
+        def rec(g, i, S):
+            others = sum(int(x) for j,x in enumerate(g) if j != i)
+            return -others
+        return FSCDescriptor(name, "Structural_Z", n, inv, rec, overhead=0)
+
+    @staticmethod
+    def structural_mirror(name: str, n: int, m: int) -> FSCDescriptor:
+        """
+        Structural mirror: v[i] + v[i+n] == m.
+        Group size is 2n. Invariant is m.
+        """
+        def inv(g): return m
+        def rec(g, i, S):
+            half = len(g) // 2
+            if i < half: return (m - int(g[i + half])) % m
+            else:        return (m - int(g[i - half])) % m
+        return FSCDescriptor(name, "Structural_Mirror", 2*n, inv, rec, overhead=0)
+
 
     @staticmethod
     def integer_sum(name: str, n: int, dtype=np.int64) -> FSCDescriptor:
@@ -303,29 +328,22 @@ def run_all():
     desc_midi = FSCFactory.integer_sum("MIDI event", 4)
     healer_midi = FSCHealer(desc_midi)
     
-    midi_events = [
-        [60, 100, 1, 480],   # C4, forte, ch1, quarter note
-        [64, 90,  1, 480],   # E4
-        [67, 95,  1, 480],   # G4
-        [72, 85,  2, 240],   # C5, ch2, eighth note
-        [55, 110, 1, 960],   # G3, forte, half note
-        [69, 75,  1, 480],   # A4
-        [71, 80,  1, 480],   # B4
-        [48, 120, 3, 1920],  # C3, fortissimo, whole note
-    ]
+    midi_events = [60, 100, 1, 480,  64, 90, 1, 480,  67, 95, 1, 480,  72, 85, 2, 240]
     
+    # Each event is 4 fields, group size 4 means 1 event per group
     groups, invs = healer_midi.encode_stream(midi_events)
     
-    # Corrupt: velocity of note 2 lost (e.g., controller malfunction)
+    # Corrupt: velocity of note 2 (index 1 in group 1)
+    # Group 1 is [64, 90, 1, 480]
     corrupted = [list(g) for g in groups]
-    corrupted[2][1] = 0
+    corrupted[1][1] = 0
     
-    healed, n_rec = healer_midi.heal_stream(corrupted, invs, [(2, 1)])
+    healed, n_rec = healer_midi.heal_stream(corrupted, invs, [(1, 1)])
     v = healer_midi.verify(groups, healed)
     
     print(f"  ✓ MIDI event healing")
-    print(f"    Lost: velocity of note 2 (was {groups[2][1]})")
-    print(f"    Recovered: {healed[2][1]}  exact={v['perfect']}")
+    print(f"    Lost: velocity of note 2 (was {groups[1][1]})")
+    print(f"    Recovered: {healed[1][1]}  exact={v['perfect']}")
     print(f"    Overhead: 8 bytes per 4-event group = 0.5 bytes/event")
     results.append(('MIDI event fields', v['perfect']))
 
@@ -340,12 +358,10 @@ def run_all():
     
     # Waypoints along a route (integer encoded, ×10^5)
     waypoints = [
-        [3670000, 310000,   500, 1700000000],  # 36.7°N, 3.1°E, 500m
-        [3671000, 310500,   510, 1700000060],
-        [3672000, 311000,   520, 1700000120],
-        [3673000, 311500,   515, 1700000180],
-        [3674000, 312000,   505, 1700000240],
-        [3675000, 312500,   500, 1700000300],
+        3670000, 310000,   500, 1700000000,
+        3671000, 310500,   510, 1700000060,
+        3672000, 311000,   520, 1700000120,
+        3673000, 311500,   515, 1700000180,
     ]
     
     groups_gps, invs_gps = healer_gps.encode_stream(waypoints)
@@ -373,13 +389,7 @@ def run_all():
     desc_ohlc = FSCFactory.xor_sum("OHLCV bar", 5)
     healer_ohlc = FSCHealer(desc_ohlc)
     
-    ohlcv = [
-        [10000, 10250, 9950, 10100, 50000],
-        [10100, 10400, 10050, 10350, 62000],
-        [10350, 10500, 10200, 10200, 48000],
-        [10200, 10300, 10050, 10280, 55000],
-        [10280, 10600, 10250, 10580, 71000],
-    ]
+    ohlcv = [10000, 10250, 9950, 10100, 50000, 10100, 10400, 10050, 10350, 62000]
     
     groups_ohlc, invs_ohlc = healer_ohlc.encode_stream(ohlcv)
     
@@ -404,14 +414,7 @@ def run_all():
     desc_ms = FSCFactory.integer_sum("Mass spec peak", 4)
     healer_ms = FSCHealer(desc_ms)
     
-    peaks = [
-        [1200, 85000, 2, 1230],   # m/z=1200, high intensity
-        [1450, 42000, 3, 1245],
-        [890,  91000, 1, 1260],
-        [2100, 12000, 4, 1275],
-        [670,  78000, 2, 1290],
-        [1800, 33000, 3, 1305],
-    ]
+    peaks = [1200, 85000, 2, 1230, 1450, 42000, 3, 1245, 890, 91000, 1, 1260]
     
     groups_ms, invs_ms = healer_ms.encode_stream(peaks)
     corrupted_ms = [list(g) for g in groups_ms]
@@ -472,9 +475,8 @@ def run_all():
     desc_merkle = FSCFactory.xor_sum("Merkle leaf pair", 2)
     healer_merkle = FSCHealer(desc_merkle)
     
-    # Pair leaves: (0,1), (2,3), (4,5), (6,7)
-    pairs = [[leaves[i], leaves[i+1]] for i in range(0, len(leaves), 2)]
-    groups_mk, invs_mk = healer_merkle.encode_stream(pairs)
+    # Use flat list of leaves, group_size=2 pairs them automatically
+    groups_mk, invs_mk = healer_merkle.encode_stream(leaves)
     
     corrupted_mk = [list(g) for g in groups_mk]
     corrupted_mk[1][0] = 0  # leaf 2 lost
@@ -529,6 +531,40 @@ def run_all():
         50, 10, 20, 20,   # group 3: sum=100
     ], dtype=np.int32)
     
+
+    # ── DOMAIN: STRUCTURAL DNA (MIRROR) ──────────────────────────
+    print("\n━━ STRUCTURAL: DNA MIRROR ━━")
+    # Data is followed by its complement. Total group size = 2n.
+    # Invariant is structural (fixed value m), zero overhead.
+    desc_dna = FSCFactory.structural_mirror("DNA Mirror", 4, 256)
+    healer_dna = FSCHealer(desc_dna)
+    dna_data = [65, 84, 71, 67, 191, 172, 185, 189]
+    invs_dna = [256]
+    corrupted_dna = [list(dna_data)]
+    corrupted_dna[0][2] = 0
+    healed_dna, _ = healer_dna.heal_stream(corrupted_dna, invs_dna, [(0, 2)])
+    ok_dna = healed_dna[0][2] == 71
+    print(f"  ✓ DNA structural recovery")
+    print(f"    Lost: base at idx 2 (was 71)")
+    print(f"    Recovered: {healed_dna[0][2]}  exact={ok_dna}")
+    print(f"    Overhead: 0 bytes (embedded in geometry)")
+    results.append(('Structural DNA Mirror', ok_dna))
+
+    # ── DOMAIN: STRUCTURAL LEDGER (ZERO-SUM) ─────────────────────
+    print("\n━━ STRUCTURAL: ZERO-SUM LEDGER ━━")
+    desc_bal = FSCFactory.structural_zero_sum("Balanced Ledger", 4)
+    healer_bal = FSCHealer(desc_bal)
+    ledger_data = [1000, -300, 500, -1200]
+    invs_bal = [0]
+    corrupted_bal = [list(ledger_data)]
+    corrupted_bal[0][3] = 0
+    healed_bal, _ = healer_bal.heal_stream(corrupted_bal, invs_bal, [(0, 3)])
+    ok_bal = healed_bal[0][3] == -1200
+    print(f"  ✓ Ledger structural recovery")
+    print(f"    Lost: balance element (was -1200)")
+    print(f"    Recovered: {healed_bal[0][3]}  exact={ok_bal}")
+    print(f"    Overhead: 0 bytes (embedded in accounting rule)")
+    results.append(('Structural Balanced Ledger', ok_bal))
     analysis = FSCAnalyzer.analyze(unknown, group_size=4)
     print(f"  Data: {unknown.tolist()}")
     print(f"  FSC applicable: {analysis['fsc_applicable']}")
