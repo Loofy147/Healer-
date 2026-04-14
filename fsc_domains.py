@@ -149,12 +149,6 @@ recovered_ttl = None
 for candidate in range(256):
     test = bytearray(corrupt_pkt)
     test[8] = candidate
-    # Recompute checksum
-    test[10] = test[11] = 0
-    cs = ones_complement_sum(bytes(test))
-    cs = (~cs) & 0xFFFF
-    test[10] = cs >> 8
-    test[11] = cs & 0xFF
     if ones_complement_sum(bytes(test)) == 0xFFFF:
         recovered_ttl = candidate
         break
@@ -462,26 +456,15 @@ for s in range(m):
             k = (s - i - j) % m
             fiber_sums[s] += int(T[i, j, k])
 
-# Corrupt an entire fiber (e.g., a corrupted MRI slice)
+# Corrupt ONE voxel in a fiber
 T_corrupt = T.copy()
 target_fiber = 3
-corrupted_voxels = []
-for i in range(m):
-    for j in range(m):
-        k = (target_fiber - i - j) % m
-        corrupted_voxels.append((i, j, k, int(T[i,j,k])))
-        T_corrupt[i, j, k] = 0
-
-# Recovery: FSC can recover ONE voxel per fiber using sum invariant
-# (same as k-1 colours in the torus problem)
-# For each fiber position, if all but one voxel known:
-# v_missing = fiber_sum - sum(known voxels)
-# Here we have m²-1 = 63 known voxels in the fiber and need to recover 1
-
-# Pick one specific voxel to recover
 i0, j0 = 2, 1
 k0 = (target_fiber - i0 - j0) % m
-original_voxel = corrupted_voxels[[v for v in corrupted_voxels if v[0]==i0 and v[1]==j0][0][2]]
+T_corrupt[i0, j0, k0] = 0
+
+# Recovery: FSC can recover ONE voxel per fiber using sum invariant
+# v_missing = fiber_sum - sum(known voxels in fiber)
 
 T_partial = T_corrupt.copy()
 known_sum = 0
