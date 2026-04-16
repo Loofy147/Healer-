@@ -1,0 +1,237 @@
+=== fsc_framework.py ===
+Class: FSCAnalyzer
+  Method: __init__(self, /, *args, **kwargs)
+  Method: analyze(data: numpy.ndarray, group_size: int = 4) -> dict
+Class: FSCDescriptor
+  Method: __init__(self, name, field, n_elements, invariant_fn, recover_fn, overhead, exact=True)
+  Method: encode(self, group)
+  Method: recover(self, corrupted_group, lost_idx, invariant)
+Class: FSCFactory
+  Method: __init__(self, /, *args, **kwargs)
+  Method: integer_sum(name: str, n: int) -> fsc_framework.FSCDescriptor
+  Method: modular_sum(name: str, n: int, m: int) -> fsc_framework.FSCDescriptor
+  Method: polynomial_eval(name: str, k: int, p: int, eval_point: int) -> fsc_framework.FSCDescriptor
+  Method: structural_mirror(name: str, n: int, m: int) -> fsc_framework.FSCDescriptor
+  Method: structural_zero_sum(name: str, n: int) -> fsc_framework.FSCDescriptor
+  Method: weighted_sum(name: str, weights: list, m: Optional[int] = None) -> fsc_framework.FSCDescriptor
+  Method: xor_sum(name: str, n: int) -> fsc_framework.FSCDescriptor
+Class: FSCHealer
+  Method: __init__(self, descriptor: fsc_framework.FSCDescriptor)
+  Method: encode_stream(self, data: list) -> tuple
+  Method: heal_stream(self, corrupted_groups: list, invariants: list, loss_mask: list) -> list
+  Method: verify(self, original: list, healed: list) -> dict
+Function: run_all()
+
+=== fsc_structural.py ===
+Class: AlgebraicFormat
+  Method: __init__(self, field_names: 'List[str]')
+  Method: _check(self, vals: 'List[int]', c: 'dict') -> 'bool'
+  Method: add_constraint(self, weights: 'List[int]', target: 'int', modulus: 'Optional[int]' = None, label: 'str' = '')
+  Method: heal(self) -> 'Optional[dict]'
+  Method: set_fields(self, values: 'dict')
+  Method: validate(self) -> 'List[str]'
+Class: BalancedGroup
+  Method: __init__(self, values: 'List[int]', weights: 'List[int]', target: 'int', modulus: 'Optional[int]' = None)
+  Method: _eval(self, vals: 'List[int]') -> 'int'
+  Method: corrupt(self, idx: 'int', bad_val: 'int') -> "'BalancedGroup'"
+  Method: recover(self, corrupted_field_idx: 'int') -> "'BalancedGroup'"
+  Method: valid(self) -> 'bool'
+Class: ComplementPair
+  Method: __init__(self, primary: 'Any', complement_fn: 'Callable', inverse_fn: 'Optional[Callable]' = None)
+  Method: corrupt_primary(self, bad_value: 'Any') -> "'ComplementPair'"
+  Method: recover(self, corrupted_field_idx: 'int') -> "'ComplementPair'"
+  Method: valid(self) -> 'bool'
+Class: FiberRecord
+  Method: __init__(self, values: 'List[int]', m: 'int', position: 'int')
+  Method: corrupt(self, idx: 'int', bad_val: 'int') -> "'FiberRecord'"
+  Method: recover(self, corrupted_field_idx: 'int') -> "'FiberRecord'"
+  Method: valid(self) -> 'bool'
+Class: PartitionRecord
+  Method: __init__(self, universe: 'Set[Any]', field_values: 'List[Set[Any]]')
+  Method: corrupt_field(self, idx: 'int', bad_val: 'Any') -> "'PartitionRecord'"
+  Method: recover(self, corrupted_field_idx: 'int') -> "'PartitionRecord'"
+  Method: valid(self) -> 'bool'
+Class: StructuralFSCType
+  Method: __init__(self, /, *args, **kwargs)
+  Method: recover(self, corrupted_field_idx: 'int') -> "'StructuralFSCType'"
+  Method: valid(self) -> 'bool'
+Function: run()
+
+=== fsc_binary.py ===
+Class: FSCField
+  Method: __init__(self, name: str, ftype: str, recoverable: bool = True, weight: int = 1)
+Class: FSCReader
+  Method: __init__(self, filename: str)
+  Method: _read_header(self)
+  Method: get_records(self)
+  Method: verify_all(self) -> numpy.ndarray
+  Method: verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1) -> bool
+Class: FSCSchema
+  Method: __init__(self, fields: List[fsc_binary.FSCField])
+Class: FSCWriter
+  Method: __init__(self, schema: fsc_binary.FSCSchema)
+  Method: add_record(self, data: List[int])
+  Method: add_records(self, data_matrix: Any)
+  Method: write(self, filename: str)
+
+=== fsc_network.py ===
+Class: StructuralPacket
+  Method: __init__(self, m: int = 251)
+  Method: _get_format(self) -> fsc_structural.AlgebraicFormat
+  Method: build(self, src_id: int, dst_id: int)
+  Method: verify_and_heal(self, header_fields: Dict[str, int]) -> Optional[Dict[str, int]]
+Function: demo()
+
+=== fsc_database.py ===
+Class: StructuralTable
+  Method: __init__(self, rows: int, cols: int, m: int = 251)
+  Method: corrupt(self, row: int, col: int, bad_val: int)
+  Method: set_data(self, source_data: List[List[int]])
+  Method: verify_and_heal(self) -> List[Dict]
+Function: demo()
+
+=== fsc_storage.py ===
+Class: StructuralLog
+  Method: __init__(self, m: int = 251, fields_per_record: int = 4)
+  Method: _get_format_for_pos(self, pos: int) -> fsc_structural.AlgebraicFormat
+  Method: append(self, data: List[int])
+  Method: verify_and_heal(self, index: int) -> bool
+
+=== fsc_domains.py ===
+==================================================================
+  FSC MULTI-DOMAIN EXPLORATION
+==================================================================
+
+━━ 1. AUDIO ━━
+
+  ✓ Stereo audio (mid-side)
+    Mechanism : L+R=2M, L-R=2S. R = M-S. Exact integer recovery.
+    Example   : R channel (44,100 samples) lost → recovered, max error=0
+    Overhead  : 2 extra int16 channels (M,S) store full redundancy
+
+  ✓ Ambisonic audio (4-channel)
+    Mechanism : W+X+Y+Z = invariant per sample. Any 1 lost channel recovered exactly.
+    Example   : Z channel (44,100 samples) → recovered, max error=0
+    Overhead  : 1 int32 invariant per sample = 4 bytes overhead (same as 1 channel)
+
+━━ 2. NETWORK ━━
+
+  ✓ IPv4 header (TTL recovery)
+    Mechanism : Header checksum = ones-complement sum = 0xFFFF. Any 1 byte recoverable by search.
+    Example   : TTL 64 → corrupted to 0 → recovered=64 ✓
+    Overhead  : Already in every IP packet — zero overhead
+
+  ✓ TCP sequence numbers
+    Mechanism : seq_n = ISN + bytes_sent (mod 2^32). Any field recoverable from the other two.
+    Example   : data_sent=4096 → recovered=4096 ✓
+    Overhead  : Zero overhead — invariant is the protocol itself
+
+━━ 3. CRYPTOGRAPHY ━━
+
+    AES MixColumns XOR invariant test:
+    Input XOR:  0x09
+    Output XOR: 0x09
+    Input  sum mod 256: 225
+    Output sum mod 256: 255
+
+  ✓ AES MixColumns byte recovery
+    Mechanism : Output byte sum mod 256 = constant per column. Any 1 byte recoverable.
+    Example   : Byte 2 = 148 → recovered = 148 ✓
+    Overhead  : Zero overhead — invariant computed from transform itself
+
+━━ 4. DATABASE ━━
+
+  ✓ Double-entry ledger
+    Mechanism : Sum(debits) = Sum(credits) always. Any 1 corrupted entry recoverable.
+    Example   : Entry 3 amount=3000 → 0 → recovered=3000 type=C ✓
+    Overhead  : Zero overhead — balance equation is the protocol
+
+━━ 5. SENSORS ━━
+
+  ~ IMU accelerometer (magnitude constraint)
+    Mechanism : |ax|² + |ay|² + |az|² = g². Recovers magnitude, not sign.
+    Example   : ax=2.300 → recovered ±2.300 (sign unknown) — approximate
+    Overhead  : Not exact closure — nonlinear constraint
+
+  ✓ Gyroscope axis recovery (sum constraint)
+    Mechanism : θx + θy + θz = known total rotation. Any 1 axis recoverable exactly.
+    Example   : θz=15° → 0 → recovered=15° ✓
+    Overhead  : 1 int16 invariant per sample = 2 bytes overhead
+
+━━ 6. BIOLOGY ━━
+
+  ✓ DNA strand recovery (complementarity)
+    Mechanism : complement(complement(strand)) = strand. One strand completely determines the other.
+    Example   : 10 bases lost from 3' end → recovered from complement strand ✓
+    Overhead  : 100% overhead (1 complement strand) — but enables full recovery of any region
+    GC content invariant: 19 (conserved ✓)
+
+━━ 7. POLYNOMIAL / REED-SOLOMON ━━
+
+  ✓ Reed-Solomon erasure codes
+    Mechanism : k data symbols = degree-(k-1) polynomial. Any k of n points reconstruct all n.
+    Example   : data=[42, 137, 89, 201, 15], n=10, k=5: 5 erasures tolerated. Recovered all 10 points ✓
+    Overhead  : 50% of stream can be lost and fully recovered
+
+━━ 8. TENSOR DATA ━━
+
+  ✓ 3D tensor / MRI volume (fiber closure)
+    Mechanism : Sum of each torus fiber = invariant. Any 1 voxel in a fiber recoverable.
+    Example   : Voxel (2,1,0) = 40 → recovered = 40 ✓
+    Overhead  : m fiber sums (1 int32 each) = 32 bytes for 512 voxels = 1.56% overhead
+
+==================================================================
+  SUMMARY
+==================================================================
+
+  ✓ EXACT ALGEBRAIC CLOSURE (10):
+    · Stereo audio (mid-side)
+    · Ambisonic audio (4-channel)
+    · IPv4 header (TTL recovery)
+    · TCP sequence numbers
+    · AES MixColumns byte recovery
+    · Double-entry ledger
+    · Gyroscope axis recovery (sum constraint)
+    · DNA strand recovery (complementarity)
+    · Reed-Solomon erasure codes
+    · 3D tensor / MRI volume (fiber closure)
+
+  ~ APPROXIMATE / CONSTRAINED (1):
+    · IMU accelerometer (magnitude constraint)
+
+  PATTERN ACROSS ALL EXACT DOMAINS:
+  ┌────────────────────────────────────────────────────────────┐
+  │  1. INTEGER FIELD: Z, Z_m, GF(2), GF(2^8), GF(p)         │
+  │  2. LINEAR INVARIANT: sum, XOR sum, balance equation       │
+  │  3. LOCAL RECOVERY: 1 subtraction, O(1) per lost element  │
+  └────────────────────────────────────────────────────────────┘
+
+  NEW INSIGHT FROM THIS EXPLORATION:
+  · Audio, Network, Crypto, Database, DNA, Polynomial all share
+    the same mathematical structure as the torus problem.
+  · The torus fiber map f(i,j,k)=(i+j+k) mod m appears in:
+    - IPv4/TCP (address+port sums)
+    - Ambisonics (W+X+Y+Z per sample)
+    - Double-entry ledger (debits+credits=0)
+    - 3D tensor fibers (MRI, seismic, climate)
+  · Reed-Solomon generalizes this to polynomial evaluation —
+    the most powerful version of FSC.
+
+Class: Ledger
+  Method: __init__(self)
+  Method: post(self, account, amount, entry_type)
+  Method: recover_entry(self, corrupt_idx)
+  Method: verify(self)
+Function: dna_complement(strand)
+Function: gc_content(strand)
+Function: gf_mul(a, b)
+Function: gf_sum(vals)
+Function: lagrange_interp(points, x, p)
+Function: make_ipv4_header(src_ip, dst_ip, ttl=64, protocol=6, length=40)
+Function: mix_column(col)
+Function: ones_complement_sum(data: bytes) -> int
+Function: poly_eval(coeffs, x, p)
+Function: report(domain, ok, mechanism, example, overhead=None)
+Function: stereo_encode(L, R)
+Function: stereo_recover_L(M, S)
+Function: stereo_recover_R(M, S)

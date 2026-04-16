@@ -1,10 +1,10 @@
 import numpy as np
 import struct
 import io
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 class FSCField:
-    # Field types as defined in Section 5.2
+    """A single field definition within an FSC record."""
     TYPES = {
         'UINT8': 'B',
         'UINT16': 'H',
@@ -15,119 +15,221 @@ class FSCField:
         'INT64': 'q'
     }
 
-    def __init__(self, name: str, ftype: str, recoverable: bool = True, weight: int = 1):
+    def __init__(self, name: str, ftype: str):
         self.name = name.ljust(16)[:16]
         self.ftype = ftype
         self.fmt = self.TYPES[ftype]
-        self.recoverable = 1 if recoverable else 0
-        self.weight = weight
+
+class FSCConstraint:
+    """An algebraic constraint: sum(w_i * v_i) == target."""
+    def __init__(self, weights: List[int], target: Optional[int] = None,
+                 is_fiber: bool = False, label: str = ""):
+        self.weights = weights # length must match number of DATA fields
+        self.target = target   # fixed target if not fiber
+        self.is_fiber = is_fiber
+        self.label = label
+        self.stored_field_idx = -1 # Index in the full record if it's a stored invariant
 
 class FSCSchema:
+    """Schema defining fields and their algebraic constraints."""
     def __init__(self, fields: List[FSCField]):
-        self.fields = fields
-        # All records end with fiber_sum (INT64)
-        self.fields.append(FSCField("fiber_sum", "INT64", recoverable=False))
-        self.record_fmt = ">" + "".join(f.fmt for f in self.fields)
-        self.record_size = struct.calcsize(self.record_fmt)
+        self.data_fields = fields
+        self.constraints: List[FSCConstraint] = []
+        self.all_fields = list(fields) # Includes stored invariants
+
+    def add_constraint(self, weights: List[int], target: Optional[int] = None,
+                       is_fiber: bool = False, label: str = ""):
+        """Add a constraint. If not fiber and target is None, it's a 'Stored Sum' invariant."""
+        if len(weights) != len(self.data_fields):
+            raise ValueError(f"Constraint weights ({len(weights)}) must match data fields ({len(self.data_fields)})")
+
+        c = FSCConstraint(weights, target, is_fiber, label)
+        if not is_fiber and target is None:
+            # Add a stored invariant field
+            field_name = label if label else f"sum_{len(self.constraints)}"
+            inv_field = FSCField(field_name, "INT64")
+            self.all_fields.append(inv_field)
+            c.stored_field_idx = len(self.all_fields) - 1
+
+        self.constraints.append(c)
+
+    @property
+    def record_fmt(self) -> str:
+        return ">" + "".join(f.fmt for f in self.all_fields)
+
+    @property
+    def record_size(self) -> int:
+        return struct.calcsize(self.record_fmt)
 
 class FSCWriter:
+    """Writes FSC binary files with embedded invariants."""
     def __init__(self, schema: FSCSchema):
         self.schema = schema
         self.records = []
 
-    def add_records(self, data_matrix: Any):
-        """Batch add records from a 2D list or NumPy array."""
-        arr = np.asarray(data_matrix, dtype=np.int64)
-        fiber_sums = np.sum(arr, axis=1, keepdims=True)
-        full_records = np.hstack([arr, fiber_sums]).tolist()
-        self.records.extend(full_records)
-
     def add_record(self, data: List[int]):
-        # data should not include fiber_sum
-        fiber_sum = sum(data)
-        record = list(data) + [fiber_sum]
-        self.records.append(record)
+        """Add a record. Invariants are automatically computed."""
+        if len(data) != len(self.schema.data_fields):
+            raise ValueError("Data length must match data_fields")
+
+        full_record = list(data)
+        # Ensure we have slots for stored invariants
+        n_extra = len(self.schema.all_fields) - len(self.schema.data_fields)
+        full_record.extend([0] * n_extra)
+
+        for c in self.schema.constraints:
+            if not c.is_fiber and c.target is None:
+                # Compute and store invariant
+                val = sum(w * v for w, v in zip(c.weights, data))
+                full_record[c.stored_field_idx] = val
+
+        self.records.append(full_record)
 
     def write(self, filename: str):
         with open(filename, "wb") as f:
-            # Header: FSC1 (4), version (1), n_fields (2), n_records (4)
+            # Header: FSC1 (4), version (1), n_data_fields (2), n_constraints (1), n_stored (1), n_records (4)
             f.write(b"FSC1")
-            f.write(struct.pack(">BHI", 1, len(self.schema.fields), len(self.records)))
+            f.write(struct.pack(">B HB B I", 2, len(self.schema.data_fields),
+                                len(self.schema.constraints),
+                                len(self.schema.all_fields) - len(self.schema.data_fields),
+                                len(self.records)))
 
-            # Schema definition
-            for field in self.schema.fields:
+            # 1. Write Data Fields
+            for field in self.schema.data_fields:
                 f.write(field.name.encode('ascii'))
-                # ftype: u8, recoverable: u8, weight: i8
-                # We need a mapping for ftype to u8
                 ftype_idx = list(FSCField.TYPES.keys()).index(field.ftype)
-                f.write(struct.pack(">BBB", ftype_idx, field.recoverable, field.weight))
+                f.write(struct.pack(">B", ftype_idx))
 
-            # Records
+            # 2. Write Constraints
+            for c in self.schema.constraints:
+                # type: fiber(1) or stored(0), target: i64, weights: n_data_fields * i8
+                ctype = 1 if c.is_fiber else 0
+                target = c.target if c.target is not None else 0
+                f.write(struct.pack(">B q b", ctype, target, c.stored_field_idx))
+                f.write(struct.pack(">" + "b"*len(c.weights), *c.weights))
+
+            # 3. Write Records
+            record_fmt = self.schema.record_fmt
             for record in self.records:
-                f.write(struct.pack(self.schema.record_fmt, *record))
+                f.write(struct.pack(record_fmt, *record))
 
 class FSCReader:
+    """Reads and heals FSC binary files using Model 4 and 5."""
     def __init__(self, filename: str):
         self.filename = filename
-        self.fields = []
+        self.data_fields = []
+        self.constraints = []
         self.records = []
         self.ftype_list = list(FSCField.TYPES.keys())
-        self._read_header()
+        self._read_file()
 
-    def _read_header(self):
+    def _read_file(self):
         with open(self.filename, "rb") as f:
             magic = f.read(4)
-            if magic != b"FSC1":
-                raise ValueError("Invalid magic number")
+            if magic != b"FSC1": raise ValueError("Invalid magic")
 
-            version, n_fields, n_records = struct.unpack(">BHI", f.read(7))
+            # version(1), n_data(2), n_cons(1), n_stored(1), n_recs(4)
+            version, n_data_fields, n_constraints, n_stored_fields, n_records = struct.unpack(">B HB B I", f.read(9))
 
-            for _ in range(n_fields):
+            # Read Data Fields
+            for _ in range(n_data_fields):
                 name = f.read(16).decode('ascii').strip()
-                ftype_idx, recoverable, weight = struct.unpack(">BBB", f.read(3))
-                # Treat weight as signed i8 if needed, but here simple u8 read
-                self.fields.append({
-                    'name': name,
-                    'ftype': self.ftype_list[ftype_idx],
-                    'fmt': FSCField.TYPES[self.ftype_list[ftype_idx]],
-                    'recoverable': bool(recoverable),
-                    'weight': weight
-                })
+                ftype_idx = struct.unpack(">B", f.read(1))[0]
+                self.data_fields.append(FSCField(name, self.ftype_list[ftype_idx]))
 
-            self.record_fmt = ">" + "".join(f['fmt'] for f in self.fields)
-            self.record_size = struct.calcsize(self.record_fmt)
+            self.all_fields = list(self.data_fields)
+            for i in range(n_stored_fields):
+                self.all_fields.append(FSCField(f"stored_{i}", "INT64"))
 
+            # Read Constraints
+            for _ in range(n_constraints):
+                ctype, target, s_idx = struct.unpack(">B q b", f.read(10))
+                weights = list(struct.unpack(">" + "b"*n_data_fields, f.read(n_data_fields)))
+                c = FSCConstraint(weights, target if ctype == 1 or target != 0 or s_idx == -1 else None,
+                                  is_fiber=(ctype == 1))
+                c.stored_field_idx = s_idx
+                self.constraints.append(c)
+
+            # Read Records
+            record_fmt = ">" + "".join(f.fmt for f in self.all_fields)
+            record_size = struct.calcsize(record_fmt)
             for _ in range(n_records):
-                record_data = f.read(self.record_size)
-                self.records.append(list(struct.unpack(self.record_fmt, record_data)))
-
-    def verify_all(self) -> np.ndarray:
-        """Vectorized verification of all records. Returns boolean mask of validity."""
-        arr = np.array(self.records, dtype=np.int64)
-        fiber_sums = arr[:, -1]
-        actual_sums = np.sum(arr[:, :-1], axis=1)
-        return actual_sums == fiber_sums
+                data = struct.unpack(record_fmt, f.read(record_size))
+                self.records.append(list(data))
 
     def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1) -> bool:
         """
-        Verify record integrity. If corrupted_field_idx is provided,
-        attempts to heal that specific field.
+        Automatically localize and heal corruption using multiple constraints (Model 5).
+        If corrupted_field_idx is provided, uses it directly (Model 3/4 style).
         """
         record = self.records[record_idx]
-        fiber_sum = record[-1]
-        actual_sum = sum(record[:-1])
+        data = record[:len(self.data_fields)]
 
-        if actual_sum == fiber_sum:
-            return True
+        failed_constraints = []
+        for i, c in enumerate(self.constraints):
+            if c.is_fiber: target = record_idx % 251
+            elif c.target is not None: target = c.target
+            else: target = record[c.stored_field_idx]
 
-        if corrupted_field_idx != -1 and corrupted_field_idx < len(record) - 1:
-            # Recovery: fiber_sum - sum of others
-            others_sum = sum(record[i] for i in range(len(record)-1) if i != corrupted_field_idx)
-            recovered_val = fiber_sum - others_sum
-            self.records[record_idx][corrupted_field_idx] = recovered_val
+            actual = sum(w * v for w, v in zip(c.weights, data))
+            if actual != target:
+                failed_constraints.append((i, target))
+
+        if not failed_constraints: return True
+
+        # Manual localization if index provided
+        if corrupted_field_idx != -1:
+            for i, target in failed_constraints:
+                c = self.constraints[i]
+                if c.weights[corrupted_field_idx] != 0:
+                    others = sum(w * v for j, (w, v) in enumerate(zip(c.weights, data)) if j != corrupted_field_idx)
+                    recovered_val = (target - others) // c.weights[corrupted_field_idx]
+                    self.records[record_idx][corrupted_field_idx] = recovered_val
+                    return True
+            return False
+
+        # Model 5 localization (Automatic)
+        valid_repairs = []
+        for field_idx in range(len(self.data_fields)):
+            candidates = []
+            possible = True
+            for i, target in failed_constraints:
+                c = self.constraints[i]
+                if c.weights[field_idx] == 0:
+                    possible = False
+                    break
+                others = sum(w * v for j, (w, v) in enumerate(zip(c.weights, data)) if j != field_idx)
+                # Division check
+                if (target - others) % c.weights[field_idx] != 0:
+                    possible = False
+                    break
+                candidates.append((target - others) // c.weights[field_idx])
+
+            if possible and candidates and len(set(candidates)) == 1:
+                recovered_val = candidates[0]
+                temp_data = list(data)
+                temp_data[field_idx] = recovered_val
+
+                # Verify ALL constraints
+                all_ok = True
+                for i, c in enumerate(self.constraints):
+                    if c.is_fiber: t = record_idx % 251
+                    elif c.target is not None: t = c.target
+                    else: t = record[c.stored_field_idx]
+                    if sum(w * v for w, v in zip(c.weights, temp_data)) != t:
+                        all_ok = False
+                        break
+
+                if all_ok:
+                    valid_repairs.append((field_idx, recovered_val))
+
+        if len(valid_repairs) >= 1:
+            # If multiple repairs possible, we take the first one but it implies underdetermination
+            f_idx, r_val = valid_repairs[0]
+            self.records[record_idx][f_idx] = r_val
             return True
 
         return False
 
-    def get_records(self):
-        return [r[:-1] for r in self.records]
+    def get_data(self) -> List[List[int]]:
+        return [r[:len(self.data_fields)] for r in self.records]
