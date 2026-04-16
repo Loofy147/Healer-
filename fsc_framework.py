@@ -197,58 +197,52 @@ class FSCAnalyzer:
         Returns ranked candidates.
         """
         n_groups = len(data) // group_size
-        groups = [data[i*group_size:(i+1)*group_size] for i in range(n_groups)]
 
         candidates = []
 
+        # Vectorized optimization for analysis
+        reshaped = data[:n_groups * group_size].reshape(n_groups, group_size)
+
         # Test: constant sum mod m for various m
         for m in [2, 4, 8, 16, 32, 64, 128, 256, 251, 65521]:
-            # Use Python sum for arbitrary precision to avoid overflow before modulo
-            sums = [sum(int(x) for x in g) % m for g in groups]
-            if len(set(sums)) == 1:
+            # Use int64 for sums to avoid overflow before modulo
+            sums = np.sum(reshaped.astype(np.int64), axis=1) % m
+            if np.all(sums == sums[0]):
                 candidates.append({
                     'type': f'constant_sum_mod_{m}',
-                    'value': sums[0],
+                    'value': int(sums[0]),
                     'strength': 'exact',
-                    'overhead_bytes': (m.bit_length() + 7) // 8
+                    'overhead_bytes': (int(m).bit_length() + 7) // 8
                 })
 
         # Test: constant XOR
-        xors = [int(g[0]) for g in groups]
-        for g in groups:
-            x = 0
-            for v in g: x ^= int(v)
-            xors.append(x)
-        if len(set(xors)) == 1:
+        xors = np.bitwise_xor.reduce(reshaped, axis=1)
+        if np.all(xors == xors[0]):
             candidates.append({
                 'type': 'constant_xor',
-                'value': xors[0],
+                'value': int(xors[0]),
                 'strength': 'exact',
                 'overhead_bytes': 1
             })
 
         # Test: linear trend (sum grows linearly with group index)
-        sums_raw = [sum(int(x) for x in g) for g in groups]
+        sums_raw = np.sum(reshaped.astype(np.int64), axis=1)
         if len(sums_raw) > 2:
-            diffs = [sums_raw[i+1] - sums_raw[i] for i in range(len(sums_raw)-1)]
-            if len(set(diffs)) == 1:
+            diffs = np.diff(sums_raw)
+            if np.all(diffs == diffs[0]):
                 candidates.append({
                     'type': 'arithmetic_progression',
-                    'step': diffs[0],
+                    'step': int(diffs[0]),
                     'strength': 'exact',
                     'overhead_bytes': 8
                 })
 
         # Test: GF(256) XOR sum
-        gf_xors = []
-        for g in groups:
-            x = 0
-            for v in g: x ^= (int(v) & 0xFF)
-            gf_xors.append(x)
-        if len(set(gf_xors)) == 1:
+        gf_xors = np.bitwise_xor.reduce(reshaped & 0xFF, axis=1)
+        if np.all(gf_xors == gf_xors[0]):
             candidates.append({
                 'type': 'gf256_xor_constant',
-                'value': gf_xors[0],
+                'value': int(gf_xors[0]),
                 'strength': 'exact',
                 'overhead_bytes': 1
             })
@@ -277,6 +271,19 @@ class FSCHealer:
     def encode_stream(self, data: list) -> tuple:
         """Split data into groups, compute invariants."""
         n = self.desc.n_elements
+
+        # Optimization: use numpy for standard invariants
+        if isinstance(data, (list, np.ndarray)) and len(data) % n == 0:
+            arr = np.array(data)
+            reshaped = arr.reshape(-1, n)
+
+            if 'sum' in self.desc.name.lower() and 'integer' in self.desc.name.lower():
+                invariants = np.sum(reshaped.astype(np.int64), axis=1).tolist()
+                return reshaped.tolist(), invariants
+            elif 'xor' in self.desc.name.lower():
+                invariants = np.bitwise_xor.reduce(reshaped, axis=1).tolist()
+                return reshaped.tolist(), invariants
+
         groups = [data[i:i+n] for i in range(0, len(data), n)]
         invariants = [self.desc.encode(g) for g in groups]
         return groups, invariants

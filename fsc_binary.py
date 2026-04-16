@@ -1,3 +1,4 @@
+import numpy as np
 import struct
 import io
 from typing import List, Dict, Any, Tuple
@@ -33,6 +34,13 @@ class FSCWriter:
     def __init__(self, schema: FSCSchema):
         self.schema = schema
         self.records = []
+
+    def add_records(self, data_matrix: Any):
+        """Batch add records from a 2D list or NumPy array."""
+        arr = np.asarray(data_matrix, dtype=np.int64)
+        fiber_sums = np.sum(arr, axis=1, keepdims=True)
+        full_records = np.hstack([arr, fiber_sums]).tolist()
+        self.records.extend(full_records)
 
     def add_record(self, data: List[int]):
         # data should not include fiber_sum
@@ -92,6 +100,13 @@ class FSCReader:
             for _ in range(n_records):
                 record_data = f.read(self.record_size)
                 self.records.append(list(struct.unpack(self.record_fmt, record_data)))
+
+    def verify_all(self) -> np.ndarray:
+        """Vectorized verification of all records. Returns boolean mask of validity."""
+        arr = np.array(self.records, dtype=np.int64)
+        fiber_sums = arr[:, -1]
+        actual_sums = np.sum(arr[:, :-1], axis=1)
+        return actual_sums == fiber_sums
 
     def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1) -> bool:
         """
