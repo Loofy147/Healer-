@@ -20,6 +20,18 @@ Every structured record (e.g., a sensor reading, a financial tick, or a network 
 4. **Fiber Record**: Positional invariant (Zero-overhead logs).
 5. **Algebraic Format**: Multi-constraint overdetermination (Self-identifying corruption).
 
+## Specialized Prototypes
+Standalone demonstrations of FSC in specific high-impact domains are available in the `prototypes/` directory:
+- **`prototypes/ambisonic_audio.py`**: Exact recovery of lost channels in 4-channel surround sound.
+- **`prototypes/medical_imaging.py`**: Protecting DICOM metadata using private tags.
+- **`prototypes/video_h264.py`**: Algebraic artifact removal for H.264 video streams.
+
+To run a prototype:
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 prototypes/ambisonic_audio.py
+```
+
 ## Binary File Format (.fsc)
 The `.fsc` format implements these principles in a compact binary structure:
 - **Magic**: `FSC1`
