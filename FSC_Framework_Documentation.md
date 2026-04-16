@@ -102,3 +102,38 @@ FSC cannot heal:
 
 ## 8. Summary
 Add one field to every record, set it to the sum of all other fields, and any field that gets corrupted can be recovered from the others using one subtraction—the same algebraic principle that underlies RAID, Reed-Solomon, AES, and DNA.
+
+---
+
+## 9. Binary Format Specification v2 (.fsc)
+
+### Header (9 bytes)
+- **Magic**: `FSC1` (4 bytes)
+- **Version**: `0x02` (1 byte)
+- **Data Fields Count**: `u16`
+- **Constraints Count**: `u8`
+- **Stored Fields Count**: `u8`
+- **Records Count**: `u32`
+
+### Schema Definition
+1. **Data Fields**: `name` (16 bytes, ascii) + `type_idx` (u8)
+2. **Constraints**:
+   - `type`: `u8` (0=Stored, 1=Fiber/Positional)
+   - `target`: `i64` (Fixed target value)
+   - `stored_field_idx`: `i8` (Index in the record if stored, -1 otherwise)
+   - `weights`: `i8 * n_data_fields` (Linear coefficients)
+
+### Records
+Packed data fields followed by packed stored invariant fields.
+
+## 10. 2D Page Integrity (FSCPage)
+
+### Structure
+A `Page` is a contiguous block of `N` records followed by one `Parity Record`.
+- **Vertical Parity**: The $j$-th field of the parity record is the sum of the $j$-th fields of all $N$ records in the page.
+
+### Healing Algorithm (Iterative)
+1. **Row Heal**: For each record $i$, apply Model 5 auto-localization using its horizontal constraints.
+2. **Column Heal**: For each field $j$, if exactly one record $i$ is unrecoverable via row invariants, recover it using:
+   $v_{i,j} = \text{parity}_j - \sum_{k \neq i} v_{k,j}$
+3. **Repeat** until no more erasures can be resolved or the page is perfect.
