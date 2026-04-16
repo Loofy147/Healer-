@@ -91,13 +91,13 @@ class FSCFactory:
 
 
     @staticmethod
-    def integer_sum(name: str, n: int, dtype=np.int64) -> FSCDescriptor:
+    def integer_sum(name: str, n: int) -> FSCDescriptor:
         """
         Integer sum invariant: S = sum(v[0..n-1])
         Recovery: v[i] = S - sum(all others)
         Field: Z (integers)
         """
-        def inv(g): return int(np.array(g, dtype=dtype).sum())
+        def inv(g): return int(sum(int(x) for x in g))
         def rec(g, i, S):
             others = sum(int(x) for j,x in enumerate(g) if j != i)
             return S - others
@@ -203,7 +203,8 @@ class FSCAnalyzer:
 
         # Test: constant sum mod m for various m
         for m in [2, 4, 8, 16, 32, 64, 128, 256, 251, 65521]:
-            sums = [int(g.sum()) % m for g in groups]
+            # Use Python sum for arbitrary precision to avoid overflow before modulo
+            sums = [sum(int(x) for x in g) % m for g in groups]
             if len(set(sums)) == 1:
                 candidates.append({
                     'type': f'constant_sum_mod_{m}',
@@ -227,7 +228,7 @@ class FSCAnalyzer:
             })
 
         # Test: linear trend (sum grows linearly with group index)
-        sums_raw = [int(g.sum()) for g in groups]
+        sums_raw = [sum(int(x) for x in g) for g in groups]
         if len(sums_raw) > 2:
             diffs = [sums_raw[i+1] - sums_raw[i] for i in range(len(sums_raw)-1)]
             if len(set(diffs)) == 1:
