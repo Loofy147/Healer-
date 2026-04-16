@@ -13,6 +13,9 @@ def demo():
         FSCField("quality", "UINT8")
     ]
     schema = FSCSchema(fields)
+    # Add TWO independent stored invariants for Model 5 Auto-Localization
+    schema.add_constraint([1, 1, 1, 1], label="sum_all")
+    schema.add_constraint([1, 2, 3, 4], label="weighted_sum")
 
     # 2. Generate Data
     original_data = []
@@ -25,26 +28,22 @@ def demo():
     # 3. Write to file
     filename = "demo.fsc"
     writer.write(filename)
-    print(f"Created '{filename}' with 5 records.")
+    print(f"Created '{filename}' with 5 records and 2 constraints.")
 
     # 4. Read back and verify (No corruption)
     reader = FSCReader(filename)
-    loaded_data = reader.get_records()
+    loaded_data = reader.get_data()
     print(f"Read back verified (no corruption): {loaded_data == original_data}")
 
     # 5. Simulate CORRUPTION
     # Let's corrupt the 'value' field (index 2) of the 3rd record (index 2)
-    # The 'value' field is an INT32 (4 bytes).
     print("\nSimulating disk corruption on record 2, field 'value'...")
-    # Find the offset: Header(11) + Schema(5 fields * 19) + 2 records * 15 bytes + 6 bytes into 3rd record
-    # Actually, simpler to just modify the reader's internal state to simulate a read error
     original_val = reader.records[2][2]
     reader.records[2][2] = -999999 # Corrupted value
 
-    # 6. HEAL
-    print(f"Record 2 status (pre-heal): {reader.verify_and_heal(2)}") # Should return False
-    print("Attempting automatic healing of field 2...")
-    success = reader.verify_and_heal(2, corrupted_field_idx=2)
+    # 6. AUTO-HEAL (Model 5)
+    print("Attempting AUTOMATIC healing (Model 5)...")
+    success = reader.verify_and_heal(2)
     healed_val = reader.records[2][2]
 
     print(f"Healing status: {success}")
