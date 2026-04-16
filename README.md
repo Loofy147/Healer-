@@ -8,6 +8,9 @@ The **Forward Sector Correction (FSC)** framework enables exact self-healing for
 Every structured record (e.g., a sensor reading, a financial tick, or a network packet) possesses latent algebraic properties. FSC makes these properties explicit. When a field is corrupted, it is recovered exactly using its relationship to the other fields and stored (or derived) invariants.
 
 ## Key Features
+- **Multi-fault Tolerance**: Recover $k$ simultaneous corruptions using polynomial evaluation.
+- **Streaming FSC**: Real-time sliding window recovery for live data feeds.
+- **Non-numeric Support**: Self-healing for strings, blobs, and mixed-type records.
 - **Exact Recovery**: Recover the bit-perfect original value using algebraic closure.
 - **Minimal Overhead**: Typically adds only one field per record.
 - **Zero-Overhead (Model 4)**: Derives invariants from record position (Fiber logic).
