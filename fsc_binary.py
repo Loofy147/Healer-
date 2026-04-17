@@ -22,9 +22,9 @@ class FSCField:
 
 class FSCConstraint:
     """An algebraic constraint: sum(w_i * v_i) == target."""
-    def __init__(self, weights: List[int], target: Optional[int] = None,
+    def __init__(self, weights: Any, target: Optional[int] = None,
                  is_fiber: bool = False, label: str = ""):
-        self.weights = weights # length must match number of DATA fields
+        self.weights = weights # weights should be a numpy array for speed
         self.target = target   # fixed target if not fiber
         self.is_fiber = is_fiber
         self.label = label
@@ -43,7 +43,7 @@ class FSCSchema:
         if len(weights) != len(self.data_fields):
             raise ValueError(f"Constraint weights ({len(weights)}) must match data fields ({len(self.data_fields)})")
 
-        c = FSCConstraint(weights, target, is_fiber, label)
+        c = FSCConstraint(np.array(weights, dtype=np.int64), target, is_fiber, label)
         if not is_fiber and target is None:
             # Add a stored invariant field
             field_name = label if label else f"sum_{len(self.constraints)}"
@@ -77,10 +77,11 @@ class FSCWriter:
         n_extra = len(self.schema.all_fields) - len(self.schema.data_fields)
         full_record.extend([0] * n_extra)
 
+        data_np = np.array(data, dtype=np.int64)
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
                 # Compute and store invariant
-                val = sum(w * v for w, v in zip(c.weights, data))
+                val = int(np.dot(c.weights, data_np))
                 full_record[c.stored_field_idx] = val
 
         self.records.append(full_record)
@@ -106,7 +107,7 @@ class FSCWriter:
                 ctype = 1 if c.is_fiber else 0
                 target = c.target if c.target is not None else 0
                 f.write(struct.pack(">B q b", ctype, target, c.stored_field_idx))
-                f.write(struct.pack(">" + "b"*len(c.weights), *c.weights))
+                f.write(struct.pack(">" + "b"*len(c.weights), *c.weights.tolist()))
 
             # 3. Write Records
             record_fmt = self.schema.record_fmt
@@ -145,7 +146,7 @@ class FSCReader:
             for _ in range(n_constraints):
                 ctype, target, s_idx = struct.unpack(">B q b", f.read(10))
                 weights = list(struct.unpack(">" + "b"*n_data_fields, f.read(n_data_fields)))
-                c = FSCConstraint(weights, target if ctype == 1 or target != 0 or s_idx == -1 else None,
+                c = FSCConstraint(np.array(weights, dtype=np.int64), target if ctype == 1 or target != 0 or s_idx == -1 else None,
                                   is_fiber=(ctype == 1))
                 c.stored_field_idx = s_idx
                 self.constraints.append(c)
@@ -164,16 +165,19 @@ class FSCReader:
         """
         record = self.records[record_idx]
         data = record[:len(self.data_fields)]
+        data_np = np.array(data, dtype=np.int64)
 
         failed_constraints = []
+        actual_sums = {}
         for i, c in enumerate(self.constraints):
             if c.is_fiber: target = record_idx % 251
             elif c.target is not None: target = c.target
             else: target = record[c.stored_field_idx]
 
-            actual = sum(w * v for w, v in zip(c.weights, data))
+            actual = int(np.dot(c.weights, data_np))
             if actual != target:
                 failed_constraints.append((i, target))
+                actual_sums[i] = actual
 
         if not failed_constraints: return True
 
@@ -182,9 +186,10 @@ class FSCReader:
             for i, target in failed_constraints:
                 c = self.constraints[i]
                 if c.weights[corrupted_field_idx] != 0:
-                    others = sum(w * v for j, (w, v) in enumerate(zip(c.weights, data)) if j != corrupted_field_idx)
+                    actual = actual_sums.get(i, int(np.dot(c.weights, data_np)))
+                    others = actual - (c.weights[corrupted_field_idx] * data_np[corrupted_field_idx])
                     recovered_val = (target - others) // c.weights[corrupted_field_idx]
-                    self.records[record_idx][corrupted_field_idx] = recovered_val
+                    self.records[record_idx][corrupted_field_idx] = int(recovered_val)
                     return True
             return False
 
@@ -195,20 +200,24 @@ class FSCReader:
             possible = True
             for i, target in failed_constraints:
                 c = self.constraints[i]
-                if c.weights[field_idx] == 0:
+                w = c.weights[field_idx]
+                if w == 0:
                     possible = False
                     break
-                others = sum(w * v for j, (w, v) in enumerate(zip(c.weights, data)) if j != field_idx)
+
+                actual = actual_sums[i]
+                others = actual - (w * data_np[field_idx])
+
                 # Division check
-                if (target - others) % c.weights[field_idx] != 0:
+                if (target - others) % w != 0:
                     possible = False
                     break
-                candidates.append((target - others) // c.weights[field_idx])
+                candidates.append((target - others) // w)
 
             if possible and candidates and len(set(candidates)) == 1:
-                recovered_val = candidates[0]
-                temp_data = list(data)
-                temp_data[field_idx] = recovered_val
+                recovered_val = int(candidates[0])
+                temp_data_np = data_np.copy()
+                temp_data_np[field_idx] = recovered_val
 
                 # Verify ALL constraints
                 all_ok = True
@@ -216,7 +225,8 @@ class FSCReader:
                     if c.is_fiber: t = record_idx % 251
                     elif c.target is not None: t = c.target
                     else: t = record[c.stored_field_idx]
-                    if sum(w * v for w, v in zip(c.weights, temp_data)) != t:
+
+                    if int(np.dot(c.weights, temp_data_np)) != t:
                         all_ok = False
                         break
 
