@@ -1,3 +1,4 @@
+import numpy as np
 from fsc_binary import FSCField, FSCSchema
 from fsc_page import FSCPageWriter, FSCPageReader
 import os
@@ -23,7 +24,7 @@ def test_2d_healing():
     # Corrupt Row 0 completely (Two erasures) -> Row-wise healing fails.
     reader.data_records[0] = [0, 0]
     # Corrupt Row 1 partially (One erasure) -> Row-wise healing should fix it.
-    reader.data_records[1][1] = 0
+    reader.data_records[1, 1] = 0
 
     print(f"  Corrupted Data (Row 0 lost [0,0], Row 1 corrupted [30,0]):")
     for r in reader.data_records: print(f"    {r}")

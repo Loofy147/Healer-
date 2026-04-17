@@ -1,4 +1,5 @@
 import random
+import numpy as np
 from typing import List, Dict, Set
 
 class CascadeHealer:
@@ -41,10 +42,16 @@ class CascadeHealer:
 
         print(f"Starting cascade healing for {len(corrupted)} corrupted fields...")
 
+        # Optimization: Pre-calculate current sums for all constraints to enable O(1) residual calculation
+        constraint_sums = []
+        for c in self.constraints:
+            s = sum(self.get_value(rid, fidx) for rid, fidx in c['involved'])
+            constraint_sums.append(s)
+
         while healed_any and corrupted:
             healed_any = False
 
-            for c in self.constraints:
+            for i, c in enumerate(self.constraints):
                 # Find how many corrupted fields are in this constraint
                 involved_corrupted = [p for p in c['involved'] if p in corrupted]
 
@@ -53,19 +60,30 @@ class CascadeHealer:
                     target_p = involved_corrupted[0]
                     rid, fidx = target_p
 
-                    # Calculate sum of all OTHER fields in constraint
-                    sum_others = 0
-                    for orid, ofidx in c['involved']:
-                        if (orid, ofidx) != target_p:
-                            sum_others += self.get_value(orid, ofidx)
+                    # O(1) residual calculation:
+                    # target = (sum_others + recovered_val) % modulus
+                    # current_sum = sum_others + corrupted_val
+                    # recovered_val = target - (current_sum - corrupted_val)
 
-                    # Recover
+                    corrupted_val = self.get_value(rid, fidx)
+                    current_sum = constraint_sums[i]
+                    sum_others = current_sum - corrupted_val
+
                     if c['modulus']:
                         recovered = (c['target'] - sum_others) % c['modulus']
                     else:
                         recovered = c['target'] - sum_others
 
+                    # Update value and sum
                     self.set_value(rid, fidx, recovered)
+                    constraint_sums[i] = c['target'] # By definition, the constraint is now satisfied
+
+                    # Also need to update OTHER constraints that involve this field!
+                    # For simplicity in this O(N) loop, we just update the sums for any constraint sharing this field.
+                    for j, other_c in enumerate(self.constraints):
+                        if i != j and target_p in other_c['involved']:
+                            constraint_sums[j] += (recovered - corrupted_val)
+
                     corrupted.remove(target_p)
                     healed_any = True
                     print(f"  [CASCADE] Healed ({rid}, {fidx}) via constraint: sum({c['involved']}) = {c['target']}")
@@ -73,60 +91,24 @@ class CascadeHealer:
 
         return len(corrupted) == 0
 
-# ── DEMO ───────────────────────────────────────────────────────────
-
 def demo():
     print("━━ CROSS-RECORD CASCADE HEALING DEMO ━━")
     healer = CascadeHealer()
-
-    # 3 Records forming a chain through shared invariants
-    # R0 [2, 3, 5]  - sum=10
-    # R1 [5, 7, 8]  - sum=20
-    # R2 [8, 10, 12] - sum=30
-
-    # Links:
-    # L1: R0[2] + R1[0] = 10 (shared value 5)
-    # L2: R1[2] + R2[0] = 16 (shared value 8)
-
     healer.add_record(0, [2, 3, 5])
     healer.add_record(1, [5, 7, 8])
     healer.add_record(2, [8, 10, 12])
-
-    # Record-level invariants (Internal)
     healer.add_constraint([(0,0), (0,1), (0,2)], 10)
     healer.add_constraint([(1,0), (1,1), (1,2)], 20)
     healer.add_constraint([(2,0), (2,1), (2,2)], 30)
-
-    # Graph-level invariants (Cross-record)
     healer.add_constraint([(0,2), (1,0)], 10)
     healer.add_constraint([(1,2), (2,0)], 16)
-
-    print("Initial Data:")
-    print(f"  R0: {healer.records[0]}")
-    print(f"  R1: {healer.records[1]}")
-    print(f"  R2: {healer.records[2]}")
-
-    # SIMULATE MASSIVE CORRUPTION (5 fields lost)
-    # This renders R1 completely unrecoverable by its own internal constraint (3/3 lost)
-    # Only R0 and R2 internal constraints have 1 loss.
-
     corrupted_indices = [(0,2), (1,0), (1,1), (1,2), (2,0)]
-    for rid, fidx in corrupted_indices:
-        healer.set_value(rid, fidx, 0)
-
-    print("\nCorruption Applied (0s):")
-    print(f"  R0: {healer.records[0]}")
-    print(f"  R1: {healer.records[1]}")
-    print(f"  R2: {healer.records[2]}")
-
-    # HEAL
+    for rid, fidx in corrupted_indices: healer.set_value(rid, fidx, 0)
     success = healer.heal_cascade(set(corrupted_indices))
-
     print(f"\nHealing result: {'SUCCESS' if success else 'FAILURE'}")
-    print(f"Final Data:")
-    print(f"  R0: {healer.records[0]} (Exact: {healer.records[0] == [2,3,5]})")
-    print(f"  R1: {healer.records[1]} (Exact: {healer.records[1] == [5,7,8]})")
-    print(f"  R2: {healer.records[2]} (Exact: {healer.records[2] == [8,10,12]})")
+    assert healer.records[0] == [2, 3, 5]
+    assert healer.records[1] == [5, 7, 8]
+    assert healer.records[2] == [8, 10, 12]
 
 if __name__ == "__main__":
     demo()

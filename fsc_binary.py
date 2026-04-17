@@ -120,7 +120,7 @@ class FSCReader:
         self.filename = filename
         self.data_fields = []
         self.constraints = []
-        self.records = []
+        self.records = np.array([], dtype=np.int64)
         self.ftype_list = list(FSCField.TYPES.keys())
         self._read_file()
 
@@ -151,12 +151,19 @@ class FSCReader:
                 c.stored_field_idx = s_idx
                 self.constraints.append(c)
 
-            # Read Records
+            # Read Records into NumPy array
             record_fmt = ">" + "".join(f.fmt for f in self.all_fields)
             record_size = struct.calcsize(record_fmt)
+
+            recs = []
             for _ in range(n_records):
                 data = struct.unpack(record_fmt, f.read(record_size))
-                self.records.append(list(data))
+                recs.append(data)
+
+            if recs:
+                self.records = np.array(recs, dtype=np.int64)
+            else:
+                self.records = np.empty((0, len(self.all_fields)), dtype=np.int64)
 
     def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1) -> bool:
         """
@@ -164,8 +171,7 @@ class FSCReader:
         If corrupted_field_idx is provided, uses it directly (Model 3/4 style).
         """
         record = self.records[record_idx]
-        data = record[:len(self.data_fields)]
-        data_np = np.array(data, dtype=np.int64)
+        data_np = record[:len(self.data_fields)]
 
         failed_constraints = []
         actual_sums = {}
@@ -189,7 +195,7 @@ class FSCReader:
                     actual = actual_sums.get(i, int(np.dot(c.weights, data_np)))
                     others = actual - (c.weights[corrupted_field_idx] * data_np[corrupted_field_idx])
                     recovered_val = (target - others) // c.weights[corrupted_field_idx]
-                    self.records[record_idx][corrupted_field_idx] = int(recovered_val)
+                    self.records[record_idx, corrupted_field_idx] = int(recovered_val)
                     return True
             return False
 
@@ -236,10 +242,10 @@ class FSCReader:
         if len(valid_repairs) >= 1:
             # If multiple repairs possible, we take the first one but it implies underdetermination
             f_idx, r_val = valid_repairs[0]
-            self.records[record_idx][f_idx] = r_val
+            self.records[record_idx, f_idx] = r_val
             return True
 
         return False
 
     def get_data(self) -> List[List[int]]:
-        return [r[:len(self.data_fields)] for r in self.records]
+        return self.records[:, :len(self.data_fields)].tolist()

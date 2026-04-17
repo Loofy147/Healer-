@@ -204,7 +204,7 @@ if __name__ == '__main__':
         originals = {}
         for ci in corrupt_positions:
             originals[ci] = corrupted[ci]
-            corrupted[ci] = random.randint(0, p-1)
+            corrupted[ci] = (corrupted[ci] + random.randint(1, p-1)) % p
 
         print(f"    Original data:  {data}")
         print(f"    Corrupted at:   {corrupt_positions}")
@@ -235,24 +235,9 @@ if __name__ == '__main__':
         corrupt_pos = random.sample(range(6), 2)
         corrupted = list(record)
         for ci in corrupt_pos:
-            corrupted[ci] = random.randint(0,p-1)
+            corrupted[ci] = (corrupted[ci] + random.randint(1, p-1)) % p
         healed = fsc.recover(corrupted, corrupt_pos)
         if healed and healed[:6] == [v%p for v in data]:
             success += 1
 
     print(f"    2-fault recovery: {success}/1000 exact ({success/10:.1f}%)")
-
-    print(f"""
-  OVERHEAD SCALING:
-  k faults → k evaluation points → k×ceil(log₂(p)/8) bytes
-  For p=251 (8-bit): k bytes overhead per record
-
-  k=1: 1 byte  → survives any 1-field corruption
-  k=2: 2 bytes → survives any 2 simultaneous corruptions
-  k=3: 3 bytes → survives any 3 simultaneous corruptions
-  k=n: n bytes → full Reed-Solomon (50% erasure tolerance)
-
-  This is FSC generalized to polynomial erasure codes.
-  The single-field case (k=1, our FSC sum invariant) is
-  the special case of a degree-0 polynomial (constant).
-""")

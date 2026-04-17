@@ -1,3 +1,4 @@
+import numpy as np
 from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 
@@ -22,13 +23,13 @@ def test_model5_auto_localization():
     # Read and corrupt
     reader = FSCReader("test_m5.fsc")
     # Corrupt f1 (index 1)
-    reader.records[0][1] = 999
+    reader.records[0, 1] = 999
 
-    print(f"  Corrupted record: {reader.records[0][:3]}")
+    print(f"  Corrupted record: {reader.records[0, :3]}")
     success = reader.verify_and_heal(0)
-    print(f"  Healed record:    {reader.records[0][:3]}")
+    print(f"  Healed record:    {reader.records[0, :3]}")
 
-    if success and reader.records[0][:3] == original_data:
+    if success and np.array_equal(reader.records[0, :3], original_data):
         print("✓ Model 5 Auto-Localization Verified")
     else:
         print("✗ Model 5 Auto-Localization Failed")
@@ -58,12 +59,12 @@ def test_model4_fiber_binary():
     reader = FSCReader("test_m4.fsc")
 
     # Corrupt record 1, field 0
-    reader.records[1][0] = 0
-    print(f"  Corrupted record 1: {reader.records[1][:2]}")
+    reader.records[1, 0] = 0
+    print(f"  Corrupted record 1: {reader.records[1, :2]}")
     success = reader.verify_and_heal(1)
-    print(f"  Healed record 1:    {reader.records[1][:2]}")
+    print(f"  Healed record 1:    {reader.records[1, :2]}")
 
-    if success and reader.records[1][0] == 20:
+    if success and reader.records[1, 0] == 20:
         print("✓ Model 4 Fiber Binary Verified")
     else:
         print("✗ Model 4 Fiber Binary Failed")
