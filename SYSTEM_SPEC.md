@@ -295,3 +295,31 @@ _A record with mixed types (int, str, float, bytes) encoded as integers._
 - `method` **decode**`(self, encoded: list) -> dict`
 - `method` **recover_field**`(self, encoded: list, field_idx: int) -> list`
 - `method` **is_valid**`(self, encoded: list) -> bool`
+
+---
+
+## Module: `fsc_udp.py`
+
+### Class: `FSCUDPSender`
+_Sender for the self-healing UDP protocol._
+- `method` **__init__**`(self, target_ip: str, target_port: int, group_size: int = 5)`
+- `method` **send_group**`(self, payloads: List[bytes])`
+  - _Send group_size data packets + 1 XOR parity packet._
+
+### Class: `FSCUDPReceiver`
+_Receiver for the self-healing UDP protocol._
+- `method` **__init__**`(self, port: int, group_size: int = 5)`
+- `method` **listen**`(self, count: int)`
+  - _Receive and heal packets in the background._
+
+---
+
+## Module: `fsc_cascade.py`
+
+### Class: `CascadeHealer`
+_Implements global constraint propagation for cross-record healing._
+- `method` **add_record**`(self, rid: int, fields: List[int])`
+- `method` **add_constraint**`(self, involved: List[tuple], target: int, modulus: int = None)`
+  - _Add a linear constraint involving fields from multiple records._
+- `method` **heal_cascade**`(self, known_corrupted: Set[tuple]) -> bool`
+  - _Iteratively propagate fixes through the graph until all fields are recovered._

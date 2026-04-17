@@ -184,3 +184,27 @@ Mixed-type records (int, float, str, bytes) are bijectively mapped to int64 repr
 | **2D Page** | Row/Col Intersection | structural block |
 | **UDP+FSC** | Fiber Packet Group | structural protocol |
 | **Benchmark** | RS vs CRC vs FSC | performance metric |
+
+## 15. UDP+FSC Protocol
+
+### Principle
+The UDP+FSC protocol adds self-healing capabilities to unreliable UDP streams without the latency of TCP retransmissions. Packets are grouped into "Fibers" of size $W$, and an additional XOR parity packet is sent for each group.
+
+### Features
+- **Zero-Latency Recovery**: Lost packets are recovered at the receiver via XOR computation.
+- **Tunable Overhead**: Overhead is $1/W$. A group size of 10 results in 10% overhead.
+- **Ideal for Real-Time**: Designed for video streaming, voice-over-IP, and live sensor feeds.
+
+---
+
+## 16. Cross-Record Cascade Healing
+
+### Principle
+Cascade healing extends FSC from independent records to a global constraint graph. Records share invariants through overlapping fields or cross-record constraints.
+
+### Healing Propagation
+1. Identify all failed constraints in the graph.
+2. Find constraints with exactly one unknown (corrupted) field.
+3. Heal that field, satisfying the constraint.
+4. The newly healed field may reduce the number of unknowns in neighboring constraints to one.
+5. Repeat until the entire graph is recovered.
