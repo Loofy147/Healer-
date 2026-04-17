@@ -44,8 +44,8 @@ td{padding:5px 8px;border-bottom:0.5px solid var(--color-border-tertiary);color:
 <div class="w">
 
 <div class="grid4">
-  <div class="stat"><p class="sv ok">18</p><p class="sl">domains verified</p></div>
-  <div class="stat"><p class="sv" style="color:var(--color-text-info)">100%</p><p class="sl">exact recovery</p></div>
+  <div class="stat"><p class="sv ok">26</p><p class="sl">domains verified</p></div>
+  <div class="stat"><p class="sv" style="color:var(--color-text-info)">100%</p><p class="sl">frontiers verified</p></div>
   <div class="stat"><p class="sv" style="color:var(--color-text-warning)">51k×</p><p class="sl">faster than TCP</p></div>
   <div class="stat"><p class="sv" style="color:var(--color-text-primary)">O(1)</p><p class="sl">recovery time</p></div>
 </div>
@@ -150,6 +150,9 @@ td{padding:5px 8px;border-bottom:0.5px solid var(--color-border-tertiary);color:
 
 <script>
 const exactDomains = [
+  ["Multi-fault (k-corruption recovery)","exact"],["Streaming (sliding window)","exact"],
+  ["Non-numeric (blobs & mixed types)","exact"],["2D Page (cascade healing)","exact"],
+  ["UDP+FSC (self-healing protocol)","exact"],["Benchmark (CRC/RS comparison)","exact"],
   ["Audio (stereo mid-side)","exact"],["Audio (4-ch Ambisonic)","exact"],
   ["MIDI events","exact"],["GPS waypoints","exact"],
   ["Financial OHLCV","exact"],["HFT tick data","exact"],

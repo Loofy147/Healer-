@@ -243,3 +243,83 @@ _A log where every record is algebraically dependent on its position._
 - `stereo_recover_R`**`(M, S)`**
 
 ---
+
+---
+
+## Module: `fsc_multifault.py`
+
+### Class: `MultiFaultFSC`
+_k-fault tolerant FSC for a record of n integer fields._
+- `method` **__init__**`(self, n_data: int, k_faults: int, p: int = 251)`
+- `method` **encode**`(self, data: list) -> list`
+  - _Encode data → data + k evaluation points._
+- `method` **recover**`(self, record: list, corrupted_indices: list) -> list`
+  - _Recover k corrupted fields from evaluation invariants._
+- `method` **is_valid**`(self, record: list) -> bool`
+- `method` **detect_corruptions**`(self, record: list) -> list`
+  - _Identify corrupted fields by trying combinations of k faults._
+
+---
+
+## Module: `fsc_streaming.py`
+
+### Class: `SlidingWindowFSC`
+_FSC over a sliding window of W records._
+- `method` **__init__**`(self, window_size: int, fields: List[str])`
+- `method` **ingest**`(self, record: dict) -> dict`
+  - _Add record and update rolling invariant._
+- `method` **get_window_invariant**`(self, seq: int) -> Optional[dict]`
+- `method` **recover**`(self, window_records: List[dict], lost_seq: int, invariant: dict) -> dict`
+
+### Class: `BurstFSC`
+_Handle burst loss using multiple overlapping windows._
+- `method` **__init__**`(self, window_size: int, n_windows: int = 2)`
+- `method` **process**`(self, record: dict) -> None`
+- `method` **recover_burst**`(self, lost_seqs: List[int]) -> List[dict]`
+
+---
+
+## Module: `fsc_nonnumeric.py`
+
+### Class: `SegmentFSC`
+_Apply FSC to a blob by splitting into integer segments._
+- `method` **__init__**`(self, segment_size: int = 8)`
+- `method` **encode**`(self, data: bytes) -> dict`
+- `method` **recover**`(self, corrupted: dict, seg_idx: int) -> dict`
+- `method` **decode**`(self, encoded: dict) -> bytes`
+
+### Class: `MixedRecord`
+_A record with mixed types (int, str, float, bytes) encoded as integers._
+- `method` **__init__**`(self, schema: list)`
+- `method` **encode**`(self, record: dict) -> list`
+- `method` **decode**`(self, encoded: list) -> dict`
+- `method` **recover_field**`(self, encoded: list, field_idx: int) -> list`
+- `method` **is_valid**`(self, encoded: list) -> bool`
+
+---
+
+## Module: `fsc_udp.py`
+
+### Class: `FSCUDPSender`
+_Sender for the self-healing UDP protocol._
+- `method` **__init__**`(self, target_ip: str, target_port: int, group_size: int = 5)`
+- `method` **send_group**`(self, payloads: List[bytes])`
+  - _Send group_size data packets + 1 XOR parity packet._
+
+### Class: `FSCUDPReceiver`
+_Receiver for the self-healing UDP protocol._
+- `method` **__init__**`(self, port: int, group_size: int = 5)`
+- `method` **listen**`(self, count: int)`
+  - _Receive and heal packets in the background._
+
+---
+
+## Module: `fsc_cascade.py`
+
+### Class: `CascadeHealer`
+_Implements global constraint propagation for cross-record healing._
+- `method` **add_record**`(self, rid: int, fields: List[int])`
+- `method` **add_constraint**`(self, involved: List[tuple], target: int, modulus: int = None)`
+  - _Add a linear constraint involving fields from multiple records._
+- `method` **heal_cascade**`(self, known_corrupted: Set[tuple]) -> bool`
+  - _Iteratively propagate fixes through the graph until all fields are recovered._
