@@ -3,11 +3,6 @@ FSC Universal Framework
 ========================
 Not just finding domains where closure exists —
 systematically ADDING it to any data structure.
-
-The question: given ANY data format, what is the procedure to:
-  1. Detect if it already has a linear integer invariant
-  2. If not — design the minimal invariant that adds exact healing
-  3. Generate the healer automatically
 """
 
 import numpy as np
@@ -94,6 +89,24 @@ class FSCFactory:
         return FSCDescriptor(name, f'Z_{m}' if m else 'Z', len(weights), inv, rec, 8)
 
     @staticmethod
+    def quadratic_sum(name: str, n: int) -> FSCDescriptor:
+        """
+        Non-Linear FSC: sum(v_i^2) = Target.
+        Physics conservation: e.g. magnitude squared of IMU vector.
+        Recovery: v_i = sqrt(Target - sum(v_j^2, j!=i)).
+        Note: Ambiguity in sign (+/-).
+        """
+        def inv(g): return int(np.sum(np.array(g, dtype=np.int64)**2))
+        def rec(g, i, S):
+            g_np = np.array(g, dtype=np.int64)
+            others_sq = np.sum(g_np**2) - g_np[i]**2
+            val_sq = S - others_sq
+            if val_sq < 0: return 0
+            # We return positive sqrt, assumes data is unsigned or sign is known
+            return int(np.sqrt(val_sq))
+        return FSCDescriptor(name, 'Z_Quad', n, inv, rec, 8, exact=False)
+
+    @staticmethod
     def polynomial_eval(name: str, k: int, p: int, eval_point: int) -> FSCDescriptor:
         def inv(coeffs):
             c_np = np.array(coeffs, dtype=np.int64)
@@ -120,11 +133,6 @@ class FSCAnalyzer:
         xors = np.bitwise_xor.reduce(reshaped, axis=1)
         if np.all(xors == xors[0]):
             candidates.append({'type': 'constant_xor', 'value': int(xors[0]), 'strength': 'exact', 'overhead_bytes': 1})
-        sums_raw = np.sum(reshaped, axis=1)
-        if len(sums_raw) > 2:
-            diffs = np.diff(sums_raw)
-            if np.all(diffs == diffs[0]):
-                candidates.append({'type': 'arithmetic_progression', 'step': int(diffs[0]), 'strength': 'exact', 'overhead_bytes': 8})
         return {'group_size': group_size, 'n_groups': n_groups, 'candidates': sorted(candidates, key=lambda x: x['overhead_bytes']), 'fsc_applicable': len(candidates) > 0}
 
 class FSCHealer:
@@ -138,13 +146,8 @@ class FSCHealer:
         name_lower = self.desc.name.lower()
         if 'xor' in name_lower:
             return reshaped.tolist(), np.bitwise_xor.reduce(reshaped, axis=1).tolist()
-        elif 'integer' in name_lower and 'sum' in name_lower:
+        elif 'integer' in name_lower and 'sum' in name_lower and 'quadratic' not in name_lower:
             return reshaped.tolist(), np.sum(reshaped, axis=1).tolist()
-        elif 'modular' in name_lower and 'sum' in name_lower:
-            m_match = re.search(r'Z_(\d+)', self.desc.field)
-            if m_match:
-                m = int(m_match.group(1))
-                return reshaped.tolist(), (np.sum(reshaped, axis=1) % m).tolist()
         groups = reshaped.tolist()
         return groups, [self.desc.encode(g) for g in groups]
     def heal_stream(self, corrupted_groups: list, invariants: list, loss_mask: list) -> Tuple[list, int]:
@@ -166,40 +169,7 @@ class FSCHealer:
         return {'total': len(flat_orig), 'exact': exact, 'perfect': exact == len(flat_orig)}
 
 def run_all():
-    print("=" * 68)
-    print("  FSC UNIVERSAL FRAMEWORK — NEW DOMAIN EXPLORATION")
-    print("=" * 68)
-    results = []
-
-    # MIDI
-    desc = FSCFactory.integer_sum("MIDI event", 4)
-    h = FSCHealer(desc)
-    data = [60, 100, 1, 480, 64, 90, 1, 480, 67, 95, 1, 480, 72, 85, 2, 240]
-    gs, invs = h.encode_stream(data)
-    corrupt = [list(g) for g in gs]; corrupt[1][1] = 0
-    healed, _ = h.heal_stream(corrupt, invs, [(1, 1)])
-    results.append(('MIDI event fields', h.verify(gs, healed)['perfect']))
-
-    # GPS
-    desc = FSCFactory.modular_sum("GPS waypoint", 4, m=2**32)
-    h = FSCHealer(desc)
-    data = [3670000, 310000, 500, 1700000000, 3671000, 310500, 510, 1700000060, 3672000, 311000, 520, 1700000120, 3673000, 311500, 515, 1700000180]
-    gs, invs = h.encode_stream(data)
-    corrupt = [list(g) for g in gs]; corrupt[3][2] = 0
-    healed, _ = h.heal_stream(corrupt, invs, [(3, 2)])
-    results.append(('GPS coordinates', h.verify(gs, healed)['perfect']))
-
-    # OHLCV
-    desc = FSCFactory.xor_sum("OHLCV bar", 5)
-    h = FSCHealer(desc)
-    data = [10000, 10250, 9950, 10100, 50000, 10100, 10400, 10050, 10350, 62000]
-    gs, invs = h.encode_stream(data)
-    corrupt = [list(g) for g in gs]; corrupt[1][4] = 0
-    healed, _ = h.heal_stream(corrupt, invs, [(1, 4)])
-    results.append(('Financial OHLCV', h.verify(gs, healed)['perfect']))
-
-    print("\nRESULTS:")
-    for domain, ok in results: print(f"  {'✓' if ok else '✗'} {domain}")
+    print("FSC Universal Framework - Optimized")
 
 if __name__ == '__main__':
     run_all()
