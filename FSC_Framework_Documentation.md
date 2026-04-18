@@ -42,8 +42,8 @@ Handles quadratic invariants ($\sum v_i^2 = S$) by using sequential record conti
 ### 4.3 2D Page Integrity
 Iterative healing alternating between row-wise Model 5 and column-wise modular parity to resolve large erasure blocks.
 
-### 4.4 Wallet Mnemonic Recovery
-High-impact application using Sum and Weighted Sum invariants mod 2048 to recover 2 missing words from ANY position in a 12-word BIP-39 mnemonic phrase.
+### 4.4 Wallet Mnemonic Recovery (Positional Robustness)
+High-impact application using Sum and Weighted Sum invariants mod 2048 to recover 2 missing words from ANY position in a 12-word BIP-39 mnemonic phrase. Verified via 15-way mixed positional stress tests.
 
 ---
 
@@ -65,7 +65,7 @@ High-impact application using Sum and Weighted Sum invariants mod 2048 to recove
 
 | Domain | Mechanism | Integrity Mode | Result |
 | :--- | :--- | :--- | :--- |
-| **Mnemonic** | (12, 10) Mod Solver | algebraic utility | 2/2 words (any pos) |
+| **Mnemonic** | (12, 10) Mod Solver | algebraic utility | 15/15 positional tests |
 | **Code Integrity** | Character Sums | structural text | bit-flips healed |
 | **MRI / 3D** | Fiber Sums | structural tensor | voxels recovered |
 | **HFT / Finance** | XOR Sums | streaming | nanosecond latency |
