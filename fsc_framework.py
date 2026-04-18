@@ -138,6 +138,35 @@ class ContinuityQuadraticHealer:
         candidates = [root, -root]
         return min(candidates, key=lambda x: abs(x - prev_val))
 
+class IterativeNonLinearSolver:
+    """
+    Solves for missing fields in complex non-linear invariants using
+    iterative approximation (Newton-Raphson).
+    Invariant: f(v1, v2, ..., vn) = Target
+    """
+    def __init__(self, fn: Callable, target: float, tolerance: float = 1e-6):
+        self.fn = fn
+        self.target = target
+        self.tol = tolerance
+
+    def solve(self, current_vals: List[float], lost_idx: int, initial_guess: float = 0.0) -> float:
+        x = initial_guess
+        for _ in range(100):
+            test_vals = list(current_vals)
+            test_vals[lost_idx] = x
+            fx = self.fn(test_vals) - self.target
+            if abs(fx) < self.tol:
+                return x
+
+            # Numeric derivative
+            h = 1e-5
+            test_vals[lost_idx] = x + h
+            df = (self.fn(test_vals) - self.target - fx) / h
+            if abs(df) < 1e-12: break
+
+            x = x - fx / df
+        return x
+
 def gf_inv(a, p):
     return pow(int(a), p-2, p)
 
