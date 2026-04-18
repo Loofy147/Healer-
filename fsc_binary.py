@@ -2,6 +2,8 @@ import numpy as np
 import struct
 import io
 from typing import List, Dict, Any, Tuple, Optional
+from itertools import combinations
+from fsc_framework import solve_linear_system
 
 class FSCField:
     """A single field definition within an FSC record."""
@@ -196,19 +198,16 @@ class FSCReader:
         self._validity_mask = all_ok
         return all_ok
 
-    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1) -> bool:
+    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1,
+                        corrupted_indices: List[int] = None) -> bool:
         """
-        Automatically localize and heal corruption using multiple constraints (Model 5).
-        If corrupted_field_idx is provided, uses it directly (Model 3/4 style).
+        Automatically localize and heal corruption using multiple constraints.
+        Supports single-fault localization and multi-fault recovery.
         """
-        # Fast path if valid from verify_all
-        if self._validity_mask is not None and self._validity_mask[record_idx]:
-            return True
-
         record = self.records[record_idx]
         data_np = record[:len(self.data_fields)]
 
-        failed_constraints = []
+        failed_indices = []
         actual_sums = {}
         for i, c in enumerate(self.constraints):
             if c.is_fiber: target = record_idx % (c.modulus if c.modulus else 251)
@@ -216,91 +215,104 @@ class FSCReader:
             else: target = record[c.stored_field_idx]
 
             actual = int(np.dot(c.weights, data_np))
-            if c.modulus:
-                actual %= c.modulus
+            if c.modulus: actual %= c.modulus
 
             if actual != target:
-                failed_constraints.append((i, target))
+                failed_indices.append(i)
                 actual_sums[i] = actual
 
-        if not failed_constraints: return True
+        if not failed_indices: return True
 
-        if corrupted_field_idx != -1:
-            for i, target in failed_constraints:
-                c = self.constraints[i]
-                if c.weights[corrupted_field_idx] != 0:
-                    actual = actual_sums.get(i, int(np.dot(c.weights, data_np)))
-                    if c.modulus: actual %= c.modulus
+        # CASE 1: Specific field indices provided (Erasure Recovery)
+        erasure_indices = []
+        if corrupted_field_idx != -1: erasure_indices.append(corrupted_field_idx)
+        if corrupted_indices: erasure_indices.extend(corrupted_indices)
+        erasure_indices = sorted(list(set(erasure_indices)))
 
-                    others = actual - (c.weights[corrupted_field_idx] * data_np[corrupted_field_idx])
-                    if c.modulus:
-                        others %= c.modulus
-                        diff = (target - others) % c.modulus
-                        try:
-                            recovered_val = (diff * pow(int(c.weights[corrupted_field_idx]), -1, c.modulus)) % c.modulus
-                        except ValueError:
-                            continue # Try next constraint if not invertible
-                    else:
-                        diff = target - others
-                        recovered_val = diff // c.weights[corrupted_field_idx]
+        if erasure_indices:
+            t = len(erasure_indices)
+            if len(failed_indices) < t: return False # Need at least t constraints
 
-                    self.records[record_idx, corrupted_field_idx] = int(recovered_val)
-                    return True
+            # Use first t failed constraints to solve
+            p = self.constraints[failed_indices[0]].modulus
+            if not p: return False # Only modular for now
+
+            A = []; b = []
+            for i in range(t):
+                c = self.constraints[failed_indices[i]]
+                target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
+                row = [int(c.weights[ci]) % p for ci in erasure_indices]
+                known_sum = sum(int(c.weights[idx]) * int(data_np[idx]) for idx in range(len(self.data_fields)) if idx not in erasure_indices) % p
+                rhs = (target - known_sum) % p
+                A.append(row); b.append(rhs)
+
+            sol = solve_linear_system(A, b, p)
+            if sol:
+                for idx, ci in enumerate(erasure_indices): self.records[record_idx, ci] = sol[idx]
+                return True
             return False
 
-        valid_repairs = []
+        # CASE 2: Single Corruption Localization (Model 5)
         for field_idx in range(len(self.data_fields)):
             candidates = []
             possible = True
-            for i, target in failed_constraints:
+            for i in failed_indices:
                 c = self.constraints[i]
+                target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
                 w = c.weights[field_idx]
-                if w == 0:
-                    possible = False
-                    break
-                actual = actual_sums[i]
-                others = actual - (w * data_np[field_idx])
-
+                if w == 0: possible = False; break
+                others = actual_sums[i] - (w * data_np[field_idx])
                 if c.modulus:
                     others %= c.modulus
-                    diff = (target - others) % c.modulus
-                    try:
-                        inv_w = pow(int(w), -1, c.modulus)
-                        candidates.append((diff * inv_w) % c.modulus)
-                    except ValueError:
-                        possible = False
-                        break
+                    try: candidates.append(((target - others) * pow(int(w), -1, c.modulus)) % c.modulus)
+                    except ValueError: possible = False; break
                 else:
-                    diff = target - others
-                    if diff % w != 0:
-                        possible = False
-                        break
-                    candidates.append(diff // w)
+                    if (target - others) % w != 0: possible = False; break
+                    candidates.append((target - others) // w)
 
             if possible and candidates and len(set(candidates)) == 1:
                 recovered_val = int(candidates[0])
-                temp_data_np = data_np.copy()
-                temp_data_np[field_idx] = recovered_val
-                all_ok = True
-                for i, c in enumerate(self.constraints):
-                    if c.is_fiber: t = record_idx % (c.modulus if c.modulus else 251)
-                    elif c.target is not None: t = c.target
-                    else: t = record[c.stored_field_idx]
+                test_v = data_np.copy(); test_v[field_idx] = recovered_val
+                if self._verify_record(record_idx, test_v):
+                    self.records[record_idx, field_idx] = recovered_val
+                    return True
 
-                    chk_actual = int(np.dot(c.weights, temp_data_np))
-                    if c.modulus: chk_actual %= c.modulus
+        # CASE 3: Multi-Fault Blind Correction
+        # We need 2*t constraints to correct t errors.
+        num_failed = len(failed_indices)
+        for t in range(2, (num_failed // 2) + 1):
+            for combo in combinations(range(len(self.data_fields)), t):
+                p = self.constraints[failed_indices[0]].modulus
+                if not p: continue
+                A = []; b = []
+                for i in range(t):
+                    c = self.constraints[failed_indices[i]]
+                    target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
+                    row = [int(c.weights[ci]) % p for ci in combo]
+                    known_sum = sum(int(c.weights[idx]) * int(data_np[idx]) for idx in range(len(self.data_fields)) if idx not in combo) % p
+                    rhs = (target - known_sum) % p
+                    A.append(row); b.append(rhs)
 
-                    if chk_actual != t:
-                        all_ok = False
-                        break
-                if all_ok:
-                    valid_repairs.append((field_idx, recovered_val))
+                sol = solve_linear_system(A, b, p)
+                if sol:
+                    test_v = data_np.copy()
+                    for idx, ci in enumerate(combo): test_v[ci] = sol[idx]
+                    if self._verify_record(record_idx, test_v):
+                        for idx, ci in enumerate(combo): self.records[record_idx, ci] = sol[idx]
+                        return True
 
-        if len(valid_repairs) >= 1:
-            f_idx, r_val = valid_repairs[0]
-            self.records[record_idx, f_idx] = r_val
-            return True
         return False
+
+    def _verify_record(self, record_idx: int, data_np: np.ndarray) -> bool:
+        record = self.records[record_idx]
+        for c in self.constraints:
+            if c.is_fiber: target = record_idx % (c.modulus if c.modulus else 251)
+            elif c.target is not None: target = c.target
+            else: target = record[c.stored_field_idx]
+            actual = int(np.dot(c.weights, data_np))
+            if c.modulus: actual %= c.modulus
+            if actual != target: return False
+        return True
 
     def get_data(self) -> List[List[int]]:
         return self.records[:, :len(self.data_fields)].tolist()

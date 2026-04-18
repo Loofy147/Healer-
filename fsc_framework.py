@@ -119,6 +119,46 @@ class FSCFactory:
             return int(((S - others) * pow(int(powers[i]), -1, p)) % p)
         return FSCDescriptor(name, f'GF({p})', k, inv, rec, (p.bit_length() + 7) // 8)
 
+class ContinuityQuadraticHealer:
+    """
+    Solves for v_i in sum(v_i^2) = S using local continuity to resolve +/- ambiguity.
+    Common in high-frequency sensor data where consecutive values are close.
+    """
+    def __init__(self, target_sum: int):
+        self.target_sum = target_sum
+
+    def recover(self, current_group: List[int], lost_idx: int, prev_val: int) -> int:
+        g_np = np.array(current_group, dtype=np.int64)
+        others_sq = np.sum(g_np**2) - g_np[lost_idx]**2
+        val_sq = self.target_sum - others_sq
+        if val_sq < 0: return 0
+
+        root = int(np.sqrt(val_sq))
+        # Choose the root closest to the previous value
+        candidates = [root, -root]
+        return min(candidates, key=lambda x: abs(x - prev_val))
+
+def gf_inv(a, p):
+    return pow(int(a), p-2, p)
+
+def solve_linear_system(A, b, p):
+    """Gaussian elimination over GF(p)."""
+    n = len(b)
+    M = [[int(A[i][j]) % p for j in range(n)] + [int(b[i]) % p]
+         for i in range(n)]
+    for col in range(n):
+        pivot = next((r for r in range(col,n) if M[r][col]%p != 0), None)
+        if pivot is None: return None
+        M[col], M[pivot] = M[pivot], M[col]
+        inv_piv = gf_inv(M[col][col], p)
+        M[col] = [(v * inv_piv) % p for v in M[col]]
+        for row in range(n):
+            if row != col and M[row][col] != 0:
+                factor = M[row][col]
+                M[row] = [(M[row][j] - factor*M[col][j]) % p
+                           for j in range(n+1)]
+    return [row[-1] % p for row in M]
+
 class FSCAnalyzer:
     @staticmethod
     def analyze(data: np.ndarray, group_size: int = 4) -> dict:
