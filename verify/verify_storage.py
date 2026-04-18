@@ -35,7 +35,7 @@ def test_stream_healing():
     # 4. Final validation
     matches = sum(1 for i in range(100) if log.records[i] == originals[i])
     print(f"\nFinal Result: {matches}/100 records match originals.")
-    print(f"Successfully healed {healed_count} corrupted records.")
+    print(f"Successfully healed {healed_count} corrupted packets.")
 
     assert matches == 100, "Log failed to heal completely!"
     print("✓ STREAM HEALING VERIFIED (Zero Overhead)")

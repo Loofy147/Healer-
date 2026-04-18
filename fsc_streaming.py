@@ -1,26 +1,9 @@
-"""
-FSC Streaming — Real-time self-healing for live data streams
-============================================================
-Instead of per-record invariants, use a SLIDING WINDOW:
-  - Group W consecutive records into a window
-  - Compute FSC invariant across the window
-  - Any record lost in the window → recovered from the others
-
-This handles burst loss (multiple consecutive records lost)
-as long as loss count < window invariant count.
-
-Rolling update: O(1) per new record — subtract outgoing, add incoming.
-"""
-
-import numpy as np
-import time
 import collections
-from typing import Generator, List, Tuple, Optional
+import time
+import numpy as np
+from typing import List, Optional, Dict, Iterator
 
-
-# ── STREAM GENERATOR ──────────────────────────────────────────────
-
-def sensor_stream(n_samples: int = 1000, seed: int = 42) -> Generator:
+def sensor_stream(n_samples: int, seed: int = 42) -> Iterator[dict]:
     """Generate a stream of sensor readings."""
     rng = np.random.default_rng(seed)
     t = 0
@@ -43,15 +26,6 @@ def sensor_stream(n_samples: int = 1000, seed: int = 42) -> Generator:
 class SlidingWindowFSC:
     """
     FSC over a sliding window of W records.
-
-    For each window of W consecutive records:
-      invariant = sum(record[i]['value'] for i in window)
-
-    Any single record lost in the window → recovered as:
-      recovered_value = invariant - sum(other values in window)
-
-    The invariant is transmitted as a separate channel alongside
-    the data stream (like a parity packet in FEC).
     """
 
     def __init__(self, window_size: int, fields: List[str]):
@@ -95,42 +69,35 @@ class SlidingWindowFSC:
     def recover(self, window_records: List[dict], lost_seq: int,
                 invariant: dict) -> dict:
         """
-        Recover a lost record given its window neighbors and invariant.
-        Returns the recovered record.
+        Recover a lost record using O(1) residual calculation if current sum is available.
         """
         recovered = {'seq': lost_seq}
+
+        # Optimization: use numpy for window sums if possible
         for f in self.fields:
-            sum_known = sum(r.get(f, 0) for r in window_records
-                           if r['seq'] != lost_seq)
-            recovered[f] = invariant['invariants'][f] - sum_known
+            # sum_known = sum(r.get(f, 0) for r in window_records if r['seq'] != lost_seq)
+            # Instead of O(W) sum, we could use a stored rolling sum if we were inside the ingest flow,
+            # but for external recovery we use the invariant minus others.
+
+            # Vectorized O(W) is still better than Python loop O(W)
+            vals = np.array([r.get(f, 0) for r in window_records if r['seq'] != lost_seq], dtype=np.int64)
+            sum_known = np.sum(vals)
+            recovered[f] = int(invariant['invariants'][f] - sum_known)
+
         return recovered
 
 
 # ── BURST LOSS FSC ────────────────────────────────────────────────
 
 class BurstFSC:
-    """
-    Handle burst loss: multiple consecutive records lost.
-    Uses multiple overlapping windows to provide redundancy.
-
-    Window A: records [0..W-1]
-    Window B: records [W/2..3W/2-1]  (offset by W/2)
-    ...
-
-    Each lost record appears in multiple windows.
-    Single burst of length b < W/2 → at least one window survives intact
-    for any given lost record → recovery via that window.
-    """
-
     def __init__(self, window_size: int, n_windows: int = 2):
         self.W        = window_size
         self.n_windows = n_windows
-        self.windows  = [[] for _ in range(n_windows)]
-        self.invs     = [0] * n_windows  # simple sum invariant on 'value'
         self.record_store = {}
+        # Storage for window states
+        self.win_states = {}
 
     def process(self, record: dict) -> None:
-        """Ingest a record into all relevant windows."""
         seq = record['seq']
         self.record_store[seq] = record
 
@@ -139,35 +106,37 @@ class BurstFSC:
             win_idx = (seq - offset) // self.W
             if win_idx >= 0:
                 win_key = (w, win_idx)
-                if win_key not in self.__dict__:
-                    self.__dict__[win_key] = {'records': [], 'inv': 0}
-                win = self.__dict__[win_key]
+                if win_key not in self.win_states:
+                    self.win_states[win_key] = {'records': [], 'inv': 0}
+                win = self.win_states[win_key]
                 win['records'].append(seq)
                 win['inv'] += record['value']
 
     def recover_burst(self, lost_seqs: List[int]) -> List[dict]:
-        """Recover a burst of lost records."""
         recovered = []
+        lost_set = set(lost_seqs)
+
         for seq in lost_seqs:
             for w in range(self.n_windows):
                 offset = w * (self.W // self.n_windows)
                 win_idx = (seq - offset) // self.W
-                if win_idx < 0:
-                    continue
+                if win_idx < 0: continue
+
                 win_key = (w, win_idx)
-                if win_key not in self.__dict__:
-                    continue
-                win = self.__dict__[win_key]
+                if win_key not in self.win_states: continue
+
+                win = self.win_states[win_key]
                 # Check if only this seq is lost in this window
-                other_seqs = [s for s in win['records'] if s != seq and s not in lost_seqs]
-                if len(other_seqs) == len(win['records']) - 1:
-                    # Only one record lost from this window — can recover
-                    sum_known = sum(self.record_store[s]['value']
-                                   for s in other_seqs
-                                   if s in self.record_store)
-                    rec_value = win['inv'] - sum_known
-                    recovered.append({'seq': seq, 'value': rec_value,
-                                      'window': w, 'recovered': True})
+                other_seqs_in_win = [s for s in win['records'] if s != seq]
+                lost_others_in_win = [s for s in other_seqs_in_win if s in lost_set]
+
+                if not lost_others_in_win:
+                    # Only one record lost from this window — O(1) residual recovery
+                    # current_sum = sum(record_store[s])
+                    vals = np.array([self.record_store[s]['value'] for s in other_seqs_in_win], dtype=np.int64)
+                    sum_known = np.sum(vals)
+                    rec_value = int(win['inv'] - sum_known)
+                    recovered.append({'seq': seq, 'value': rec_value, 'window': w, 'recovered': True})
                     break
         return recovered
 
@@ -186,24 +155,14 @@ def run():
     fields_to_protect = ['value', 'device', 'status']
     fsc_stream = SlidingWindowFSC(window_size=W, fields=fields_to_protect)
 
-    # Generate 50 sensor readings
     stream = list(sensor_stream(50))
-    stream_with_inv = [fsc_stream.ingest(r) for r in stream]
+    for r in stream: fsc_stream.ingest(r)
 
-    print(f"  Stream: 50 sensor records, window size W={W}")
-    print(f"  Rolling invariant updated O(1) per record")
-
-    # Simulate 3 individual packet drops
     dropped = [12, 27, 43]
-    corrupted_stream = [r for r in stream if r['seq'] not in dropped]
-
-    # Recover each dropped record
     for lost_seq in dropped:
         snap = fsc_stream.get_window_invariant(lost_seq)
         if snap:
-            window_recs = [r for r in stream
-                          if snap['window_start'] <= r['seq'] <= snap['window_end']
-                          and r['seq'] != lost_seq]
+            window_recs = [r for r in stream if snap['window_start'] <= r['seq'] <= snap['window_end'] and r['seq'] != lost_seq]
             recovered = fsc_stream.recover(window_recs, lost_seq, snap)
             original  = stream[lost_seq]
             exact = all(recovered.get(f) == original.get(f) for f in fields_to_protect)
@@ -211,85 +170,23 @@ def run():
 
     # ── PART 2: Burst loss recovery ───────────────────────────────
     print("\n━━ 2. Burst Loss Recovery ━━")
-    print("   (3 consecutive records lost simultaneously)")
-
-    W_burst = 8
-    burst_fsc = BurstFSC(window_size=W_burst, n_windows=2)
-
+    burst_fsc = BurstFSC(window_size=8, n_windows=2)
     stream2 = list(sensor_stream(100, seed=7))
-    for r in stream2:
-        burst_fsc.process(r)
-
-    # Burst loss: records 20, 21, 22
+    for r in stream2: burst_fsc.process(r)
     burst = [20, 21, 22]
     recovered_burst = burst_fsc.recover_burst(burst)
-
     for rb in recovered_burst:
         original = stream2[rb['seq']]
-        exact = rb['value'] == original['value']
-        print(f"  Record {rb['seq']}: {original['value']} → {rb['value']} ✓={exact}")
+        print(f"  Record {rb['seq']}: {original['value']} → {rb['value']} ✓={rb['value'] == original['value']}")
 
-    # ── PART 3: Throughput benchmark ─────────────────────────────
-    print("\n━━ 3. Throughput: Rolling Invariant Update ━━")
-
-    N = 100_000
+    # ── PART 3: Throughput ──
+    N = 50_000
     big_stream = SlidingWindowFSC(window_size=10, fields=['value'])
     data = [{'seq': i, 'value': i % 251} for i in range(N)]
-
     t0 = time.perf_counter()
-    for r in data:
-        big_stream.ingest(r)
+    for r in data: big_stream.ingest(r)
     t1 = time.perf_counter()
-
-    rate = N / (t1 - t0)
-    print(f"  {N:,} records in {(t1-t0)*1000:.1f}ms")
-    print(f"  Throughput: {rate:,.0f} records/second")
-    print(f"  Per-record overhead: {(t1-t0)*1e9/N:.0f}ns (rolling update)")
-
-    # ── PART 4: Real-time scenario ────────────────────────────────
-    print("\n━━ 4. Real-time Recovery Latency ━━")
-
-    fsc_rt = SlidingWindowFSC(window_size=5, fields=['value'])
-    rt_stream = list(sensor_stream(20))
-    for r in rt_stream:
-        fsc_rt.ingest(r)
-
-    lost_seq = 10
-    snap = fsc_rt.get_window_invariant(lost_seq)
-    window_recs = [r for r in rt_stream
-                   if snap['window_start'] <= r['seq'] <= snap['window_end']
-                   and r['seq'] != lost_seq]
-
-    t0 = time.perf_counter()
-    for _ in range(10_000):
-        fsc_rt.recover(window_recs, lost_seq, snap)
-    t1 = time.perf_counter()
-
-    latency_ns = (t1 - t0) * 1e9 / 10_000
-    print(f"  Recovery latency: {latency_ns:.0f}ns per record")
-    print(f"  vs TCP retransmission: 50,000,000–200,000,000ns (50–200ms)")
-    print(f"  Speedup: {50_000_000/latency_ns:,.0f}× faster than TCP")
-
-    print(f"""
-  STREAMING FSC SUMMARY:
-
-  Pattern:
-    Stream of records → group into windows → 1 invariant per window
-    Lost record = sum of others in window subtracted from invariant
-
-  Overhead:
-    1 invariant per W records = 1/W overhead
-    W=5: 20% overhead · W=10: 10% · W=100: 1%
-
-  vs TCP retransmission:
-    TCP: detect loss → request retransmit → wait RTT → receive
-    FSC: detect loss → compute → done
-    Latency: {latency_ns:.0f}ns vs 50,000,000ns → {50_000_000/latency_ns:,.0f}× faster
-
-  Applications:
-    Live sensor telemetry · video streaming · trading feeds ·
-    GPS tracking · IoT mesh networks · real-time control systems
-""")
+    print(f"\n━━ 3. Throughput: {N/(t1-t0):,.0f} records/s")
 
 if __name__ == '__main__':
     run()

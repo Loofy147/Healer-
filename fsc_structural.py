@@ -1,38 +1,10 @@
-"""
-Structural FSC — Algebraic Type System
-========================================
-Designing data formats where the invariant IS the structure.
+import numpy as np
+from typing import List, Optional, Dict, Set, Any, Callable
 
-A format is FSC-structural iff its validity predicate implies a linear
-integer constraint on its fields. Then:
-  validity checking = corruption detection
-  validity repair   = algebraic recovery
-No external metadata needed — the format IS the invariant.
-"""
-
-from __future__ import annotations
-from typing import Any, Callable, List, Optional, Tuple, Set
-from abc import ABC, abstractmethod
-
-
-# ══════════════════════════════════════════════════════════════════
-# ABSTRACT BASE: STRUCTURAL FSC TYPE
-# ══════════════════════════════════════════════════════════════════
-
-class StructuralFSCType(ABC):
-    """
-    Base class for data types that embed a linear invariant.
-    """
-    @abstractmethod
-    def valid(self) -> bool:
-        """True if the instance satisfies its structural invariant."""
-        pass
-
-    @abstractmethod
-    def recover(self, corrupted_field_idx: int) -> 'StructuralFSCType':
-        """Recover a new valid instance by repairing the specified field."""
-        pass
-
+class StructuralFSCType:
+    """Base class for structural algebraic types."""
+    def valid(self) -> bool: pass
+    def recover(self, corrupted_field_idx: int) -> 'StructuralFSCType': pass
 
 # ══════════════════════════════════════════════════════════════════
 # MODEL 1: COMPLEMENT PAIR (DNA style)
@@ -40,13 +12,13 @@ class StructuralFSCType(ABC):
 
 class ComplementPair(StructuralFSCType):
     """
-    Type where validity is defined by an involution f: f(primary) == complement.
-    Used for DNA (A-T, G-C), differential signaling, and mirrors.
+    A pair of values where primary + complement satisfy an algebraic link.
+    DNA: A-T, G-C.
     """
     def __init__(self, primary: Any, complement_fn: Callable, inverse_fn: Optional[Callable] = None):
         self.primary = primary
         self.complement_fn = complement_fn
-        self.inverse_fn = inverse_fn or complement_fn
+        self.inverse_fn = inverse_fn if inverse_fn else complement_fn
         # The structure enforces that we store the "correct" complement at creation
         self._stored_complement = complement_fn(primary)
 
@@ -120,14 +92,14 @@ class BalancedGroup(StructuralFSCType):
     Used in double-entry bookkeeping and physical conservation laws.
     """
     def __init__(self, values: List[int], weights: List[int], target: int, modulus: Optional[int] = None):
-        self.values = list(values)
-        self.weights = list(weights)
+        self.values = np.array(values, dtype=np.int64)
+        self.weights = np.array(weights, dtype=np.int64)
         self.target = target
         self.modulus = modulus
 
-    def _eval(self, vals: List[int]) -> int:
-        s = sum(w * v for w, v in zip(self.weights, vals))
-        return s % self.modulus if self.modulus else s
+    def _eval(self, vals: np.ndarray) -> int:
+        s = np.dot(self.weights, vals)
+        return int(s % self.modulus) if self.modulus else int(s)
 
     def valid(self) -> bool:
         return self._eval(self.values) == self.target
@@ -135,21 +107,29 @@ class BalancedGroup(StructuralFSCType):
     def recover(self, corrupted_field_idx: int) -> 'BalancedGroup':
         # target = sum(w_j * v_j) + w_i * v_i
         # v_i = (target - sum_others) * inv(w_i)
-        others = sum(w * v for i, (w, v) in enumerate(zip(self.weights, self.values)) if i != corrupted_field_idx)
+
+        current_sum = self._eval(self.values)
+        current_val = self.values[corrupted_field_idx]
+        current_weight = self.weights[corrupted_field_idx]
+
+        # others = current_sum - weight*val
+        others = current_sum - (current_weight * current_val)
         diff = self.target - others
+
         if self.modulus:
             # Modular inverse
-            recovered = (diff * pow(self.weights[corrupted_field_idx], -1, self.modulus)) % self.modulus
+            recovered = (diff * pow(int(current_weight), -1, self.modulus)) % self.modulus
         else:
-            recovered = diff // self.weights[corrupted_field_idx]
-        new_vals = list(self.values)
+            recovered = diff // current_weight
+
+        new_vals = self.values.copy()
         new_vals[corrupted_field_idx] = recovered
-        return BalancedGroup(new_vals, self.weights, self.target, self.modulus)
+        return BalancedGroup(new_vals.tolist(), self.weights.tolist(), self.target, self.modulus)
 
     def corrupt(self, idx: int, bad_val: int) -> 'BalancedGroup':
-        new_vals = list(self.values)
+        new_vals = self.values.tolist()
         new_vals[idx] = bad_val
-        return BalancedGroup(new_vals, self.weights, self.target, self.modulus)
+        return BalancedGroup(new_vals, self.weights.tolist(), self.target, self.modulus)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -162,23 +142,24 @@ class FiberRecord(StructuralFSCType):
     No stored overhead. sum(values) % m == position % m.
     """
     def __init__(self, values: List[int], m: int, position: int):
-        self.values = list(values)
+        self.values = np.array(values, dtype=np.int64)
         self.m = m
         self.position = position
         self.fiber_class = position % m
 
     def valid(self) -> bool:
-        return sum(self.values) % self.m == self.fiber_class
+        return int(np.sum(self.values) % self.m) == self.fiber_class
 
     def recover(self, corrupted_field_idx: int) -> 'FiberRecord':
-        others = sum(v for i, v in enumerate(self.values) if i != corrupted_field_idx)
+        current_sum = np.sum(self.values)
+        others = current_sum - self.values[corrupted_field_idx]
         recovered = (self.fiber_class - others) % self.m
-        new_vals = list(self.values)
+        new_vals = self.values.copy()
         new_vals[corrupted_field_idx] = recovered
-        return FiberRecord(new_vals, self.m, self.position)
+        return FiberRecord(new_vals.tolist(), self.m, self.position)
 
     def corrupt(self, idx: int, bad_val: int) -> 'FiberRecord':
-        new_vals = list(self.values)
+        new_vals = self.values.tolist()
         new_vals[idx] = bad_val
         return FiberRecord(new_vals, self.m, self.position)
 
@@ -199,44 +180,62 @@ class AlgebraicFormat:
         self.fields = {}
 
     def add_constraint(self, weights: List[int], target: int, modulus: Optional[int] = None, label: str = ""):
-        self.constraints.append({'w': weights, 't': target, 'm': modulus, 'l': label})
+        self.constraints.append({
+            'w': np.array(weights, dtype=np.int64),
+            't': target,
+            'm': modulus,
+            'l': label
+        })
 
     def set_fields(self, values: dict):
         self.fields = {name: values.get(name, 0) for name in self.field_names}
 
-    def _check(self, vals: List[int], c: dict) -> bool:
-        s = sum(wi * vi for wi, vi in zip(c['w'], vals))
-        actual = s % c['m'] if c['m'] else s
-        return actual == c['t']
+    def _check(self, vals_np: np.ndarray, c: dict) -> bool:
+        actual = np.dot(c['w'], vals_np)
+        if c['m']:
+            actual %= c['m']
+        return int(actual) == c['t']
 
     def validate(self) -> List[str]:
-        v = [self.fields[n] for n in self.field_names]
+        v = np.array([self.fields[n] for n in self.field_names], dtype=np.int64)
         return [c['l'] for c in self.constraints if not self._check(v, c)]
 
     def heal(self) -> Optional[dict]:
-        v = [self.fields[n] for n in self.field_names]
+        v = np.array([self.fields[n] for n in self.field_names], dtype=np.int64)
         repairs = []
+
+        # Pre-calculate actual sums for all constraints
+        actual_sums = []
+        for c in self.constraints:
+            s = np.dot(c['w'], v)
+            if c['m']: s %= c['m']
+            actual_sums.append(s)
+
         for i, name in enumerate(self.field_names):
-            relevant = [c for c in self.constraints if c['w'][i] != 0]
-            if not relevant: continue
+            relevant_indices = [idx for idx, c in enumerate(self.constraints) if c['w'][i] != 0]
+            if not relevant_indices: continue
             
             # Find a candidate value that satisfies all relevant constraints
             cands = []
-            for c in relevant:
-                others = sum(wi * vi for j, (wi, vi) in enumerate(zip(c['w'], v)) if j != i)
+            for idx in relevant_indices:
+                c = self.constraints[idx]
+                actual = actual_sums[idx]
+                # others = actual - weight*val
+                others = actual - (c['w'][i] * v[i])
                 diff = c['t'] - others
+
                 if c['m']:
-                    cands.append((diff * pow(c['w'][i], -1, c['m'])) % c['m'])
+                    cands.append((diff * pow(int(c['w'][i]), -1, c['m'])) % c['m'])
                 elif diff % c['w'][i] == 0:
                     cands.append(diff // c['w'][i])
             
             if len(set(cands)) == 1:
-                candidate_val = cands[0]
-                test_v = list(v)
+                candidate_val = int(cands[0])
+                test_v = v.copy()
                 test_v[i] = candidate_val
                 # Check if this repair fixes ALL violations
                 if all(self._check(test_v, c) for c in self.constraints):
-                    repairs.append({'field': name, 'recovered': candidate_val, 'original_corrupt': v[i]})
+                    repairs.append({'field': name, 'recovered': candidate_val, 'original_corrupt': int(v[i])})
 
         return repairs[0] if len(repairs) == 1 else None
 
