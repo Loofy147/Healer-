@@ -26,293 +26,177 @@ class FSCConstraint:
     """An algebraic constraint: sum(w_i * v_i) == target."""
     def __init__(self, weights: Any, target: Optional[int] = None,
                  is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
-        self.weights = weights # weights should be a numpy array for speed
-        self.target = target   # fixed target if not fiber
+        self.weights = weights
+        self.target = target
         self.is_fiber = is_fiber
         self.label = label
         self.modulus = modulus
-        self.stored_field_idx = -1 # Index in the full record if it's a stored invariant
+        self.stored_field_idx = -1
 
 class FSCSchema:
     """Schema defining fields and their algebraic constraints."""
     def __init__(self, fields: List[FSCField]):
         self.data_fields = fields
         self.constraints: List[FSCConstraint] = []
-        self.all_fields = list(fields) # Includes stored invariants
+        self.all_fields = list(fields)
 
     def add_constraint(self, weights: List[int], target: Optional[int] = None,
                        is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
-        """Add a constraint. If not fiber and target is None, it's a 'Stored Sum' invariant."""
         if len(weights) != len(self.data_fields):
             raise ValueError(f"Constraint weights ({len(weights)}) must match data fields ({len(self.data_fields)})")
-
         c = FSCConstraint(np.array(weights, dtype=np.int64), target, is_fiber, label, modulus)
         if not is_fiber and target is None:
             field_name = label if label else f"sum_{len(self.constraints)}"
             inv_field = FSCField(field_name, "INT64")
             self.all_fields.append(inv_field)
             c.stored_field_idx = len(self.all_fields) - 1
-
         self.constraints.append(c)
 
     @property
     def record_fmt(self) -> str:
         return ">" + "".join(f.fmt for f in self.all_fields)
 
-    @property
-    def record_size(self) -> int:
-        return struct.calcsize(self.record_fmt)
-
 class FSCWriter:
-    """Writes FSC binary files with embedded invariants."""
     def __init__(self, schema: FSCSchema):
         self.schema = schema
         self.records = np.empty((0, len(self.schema.all_fields)), dtype=np.int64)
 
     def add_record(self, data: List[int]):
-        """Add a record. Invariants are automatically computed."""
         self.add_records(np.array([data], dtype=np.int64))
 
     def add_records(self, data_matrix: Any):
-        """Batch add records from a 2D list or NumPy array."""
         source_np = np.atleast_2d(np.array(data_matrix, dtype=np.int64))
         n_recs = source_np.shape[0]
         n_data = len(self.schema.data_fields)
         n_all = len(self.schema.all_fields)
-
         full_recs = np.zeros((n_recs, n_all), dtype=np.int64)
         full_recs[:, :n_data] = source_np[:, :n_data]
-
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
                 invariants = source_np[:, :n_data] @ c.weights
-                if c.modulus:
-                    invariants %= c.modulus
+                if c.modulus: invariants %= c.modulus
                 full_recs[:, c.stored_field_idx] = invariants
-
         self.records = np.vstack([self.records, full_recs]) if self.records.size else full_recs
 
     def write(self, filename: str):
         with open(filename, "wb") as f:
-            # Header
             f.write(b"FSC1")
-            # Version 3: Added modulus to constraints
             f.write(struct.pack(">B HB B I", 3, len(self.schema.data_fields),
                                 len(self.schema.constraints),
                                 len(self.schema.all_fields) - len(self.schema.data_fields),
                                 len(self.records)))
-
             for field in self.schema.data_fields:
                 f.write(field.name.encode('ascii'))
-                ftype_idx = list(FSCField.TYPES.keys()).index(field.ftype)
-                f.write(struct.pack(">B", ftype_idx))
-
+                f.write(struct.pack(">B", list(FSCField.TYPES.keys()).index(field.ftype)))
             for c in self.schema.constraints:
-                ctype = 1 if c.is_fiber else 0
-                target = c.target if c.target is not None else 0
-                modulus = c.modulus if c.modulus is not None else 0
-                # ctype (B), target (q), s_idx (b), modulus (q) -> 1 + 8 + 1 + 8 = 18 bytes
-                f.write(struct.pack(">B q b q", ctype, target, c.stored_field_idx, modulus))
+                f.write(struct.pack(">B q b q", 1 if c.is_fiber else 0, c.target or 0, c.stored_field_idx, c.modulus or 0))
                 f.write(struct.pack(">" + "b"*len(c.weights), *c.weights.tolist()))
-
-            # Pre-compile struct for performance
             s = struct.Struct(self.schema.record_fmt)
-            for record in self.records:
-                f.write(s.pack(*record))
+            for record in self.records: f.write(s.pack(*record))
 
 class FSCReader:
-    """Reads and heals FSC binary files using Model 4 and 5."""
     def __init__(self, filename: str):
         self.filename = filename
         self.data_fields = []
         self.constraints = []
         self.records = np.array([], dtype=np.int64)
-        self.ftype_list = list(FSCField.TYPES.keys())
         self._read_file()
-        self._validity_mask = None
 
     def _read_file(self):
         with open(self.filename, "rb") as f:
             magic = f.read(4)
             if magic != b"FSC1": raise ValueError("Invalid magic")
-
-            version, n_data_fields, n_constraints, n_stored_fields, n_records = struct.unpack(">B HB B I", f.read(9))
-
-            for _ in range(n_data_fields):
+            version, n_data, n_cons, n_stored, n_recs = struct.unpack(">B HB B I", f.read(9))
+            ftype_list = list(FSCField.TYPES.keys())
+            for _ in range(n_data):
                 name = f.read(16).decode('ascii').strip()
-                ftype_idx = struct.unpack(">B", f.read(1))[0]
-                self.data_fields.append(FSCField(name, self.ftype_list[ftype_idx]))
-
+                self.data_fields.append(FSCField(name, ftype_list[struct.unpack(">B", f.read(1))[0]]))
             self.all_fields = list(self.data_fields)
-            for i in range(n_stored_fields):
-                self.all_fields.append(FSCField(f"stored_{i}", "INT64"))
-
-            for _ in range(n_constraints):
-                if version >= 3:
-                    ctype, target, s_idx, modulus = struct.unpack(">B q b q", f.read(18))
-                else:
-                    ctype, target, s_idx = struct.unpack(">B q b", f.read(10))
-                    modulus = 0
-
-                weights = list(struct.unpack(">" + "b"*n_data_fields, f.read(n_data_fields)))
-                c = FSCConstraint(np.array(weights, dtype=np.int64),
-                                  target if ctype == 1 or target != 0 or s_idx == -1 else None,
-                                  is_fiber=(ctype == 1),
-                                  modulus=modulus if modulus != 0 else None)
+            for i in range(n_stored): self.all_fields.append(FSCField(f"stored_{i}", "INT64"))
+            for _ in range(n_cons):
+                ctype, target, s_idx, modulus = struct.unpack(">B q b q", f.read(18))
+                weights = list(struct.unpack(">" + "b"*n_data, f.read(n_data)))
+                c = FSCConstraint(np.array(weights, dtype=np.int64), target if ctype == 1 or target != 0 or s_idx == -1 else None, is_fiber=(ctype == 1), modulus=modulus if modulus != 0 else None)
                 c.stored_field_idx = s_idx
                 self.constraints.append(c)
+            s = struct.Struct(">"+"".join(f.fmt for f in self.all_fields))
+            recs = [s.unpack(f.read(s.size)) for _ in range(n_recs)]
+            self.records = np.array(recs, dtype=np.int64) if recs else np.empty((0, len(self.all_fields)), dtype=np.int64)
 
-            record_fmt = ">" + "".join(f.fmt for f in self.all_fields)
-            s = struct.Struct(record_fmt)
-            recs = []
-            for _ in range(n_records):
-                recs.append(s.unpack(f.read(s.size)))
-
-            if recs:
-                self.records = np.array(recs, dtype=np.int64)
-            else:
-                self.records = np.empty((0, len(self.all_fields)), dtype=np.int64)
-
-    def verify_all(self) -> np.ndarray:
-        """Vectorized verification of all records. Returns boolean mask of validity."""
-        n_recs = self.records.shape[0]
-        n_data = len(self.data_fields)
-
-        all_ok = np.ones(n_recs, dtype=bool)
-        data_np = self.records[:, :n_data]
-
-        for c in self.constraints:
-            actual = data_np @ c.weights
-            if c.modulus:
-                actual %= c.modulus
-
-            if c.is_fiber:
-                targets = np.arange(n_recs) % (c.modulus if c.modulus else 251)
-            elif c.target is not None:
-                targets = np.full(n_recs, c.target, dtype=np.int64)
-            else:
-                targets = self.records[:, c.stored_field_idx]
-
-            all_ok &= (actual == targets)
-
-        self._validity_mask = all_ok
-        return all_ok
-
-    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1,
-                        corrupted_indices: List[int] = None) -> bool:
-        """
-        Automatically localize and heal corruption using multiple constraints.
-        Supports single-fault localization and multi-fault recovery.
-        """
+    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> bool:
         record = self.records[record_idx]
         data_np = record[:len(self.data_fields)]
-
-        failed_indices = []
-        actual_sums = {}
+        failed = []; syndromes = {}
         for i, c in enumerate(self.constraints):
-            if c.is_fiber: target = record_idx % (c.modulus if c.modulus else 251)
-            elif c.target is not None: target = c.target
-            else: target = record[c.stored_field_idx]
-
+            target = record_idx % (c.modulus or 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
             actual = int(np.dot(c.weights, data_np))
             if c.modulus: actual %= c.modulus
-
             if actual != target:
-                failed_indices.append(i)
-                actual_sums[i] = actual
+                failed.append(i); syndromes[i] = (target - actual) % c.modulus if c.modulus else (target - actual)
+        if not failed: return True
 
-        if not failed_indices: return True
-
-        # CASE 1: Specific field indices provided (Erasure Recovery)
-        erasure_indices = []
-        if corrupted_field_idx != -1: erasure_indices.append(corrupted_field_idx)
-        if corrupted_indices: erasure_indices.extend(corrupted_indices)
-        erasure_indices = sorted(list(set(erasure_indices)))
+        erasure_indices = sorted(list(set(([corrupted_field_idx] if corrupted_field_idx != -1 else []) + (corrupted_indices or []))))
 
         if erasure_indices:
             t = len(erasure_indices)
-            if len(failed_indices) < t: return False # Need at least t constraints
+            if len(failed) < t: return False
+            for c_subset in combinations(failed, t):
+                p = self.constraints[c_subset[0]].modulus
+                if not p:
+                    # Non-modular Fallback (Algebraic)
+                    A = [[int(self.constraints[i].weights[ci]) for ci in erasure_indices] for i in c_subset]
+                    b = [syndromes[i] for i in c_subset]
+                    try:
+                        sol = np.linalg.solve(np.array(A), np.array(b))
+                        for idx, ci in enumerate(erasure_indices): self.records[record_idx, ci] = int(data_np[ci] + round(sol[idx]))
+                        return True
+                    except: continue
 
-            # Use first t failed constraints to solve
-            p = self.constraints[failed_indices[0]].modulus
-            if not p: return False # Only modular for now
-
-            A = []; b = []
-            for i in range(t):
-                c = self.constraints[failed_indices[i]]
-                target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
-                row = [int(c.weights[ci]) % p for ci in erasure_indices]
-                known_sum = sum(int(c.weights[idx]) * int(data_np[idx]) for idx in range(len(self.data_fields)) if idx not in erasure_indices) % p
-                rhs = (target - known_sum) % p
-                A.append(row); b.append(rhs)
-
-            sol = solve_linear_system(A, b, p)
-            if sol:
-                for idx, ci in enumerate(erasure_indices): self.records[record_idx, ci] = sol[idx]
-                return True
-            return False
-
-        # CASE 2: Single Corruption Localization (Model 5)
-        for field_idx in range(len(self.data_fields)):
-            candidates = []
-            possible = True
-            for i in failed_indices:
-                c = self.constraints[i]
-                target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
-                w = c.weights[field_idx]
-                if w == 0: possible = False; break
-                others = actual_sums[i] - (w * data_np[field_idx])
-                if c.modulus:
-                    others %= c.modulus
-                    try: candidates.append(((target - others) * pow(int(w), -1, c.modulus)) % c.modulus)
-                    except ValueError: possible = False; break
-                else:
-                    if (target - others) % w != 0: possible = False; break
-                    candidates.append((target - others) // w)
-
-            if possible and candidates and len(set(candidates)) == 1:
-                recovered_val = int(candidates[0])
-                test_v = data_np.copy(); test_v[field_idx] = recovered_val
-                if self._verify_record(record_idx, test_v):
-                    self.records[record_idx, field_idx] = recovered_val
-                    return True
-
-        # CASE 3: Multi-Fault Blind Correction
-        # We need 2*t constraints to correct t errors.
-        num_failed = len(failed_indices)
-        for t in range(2, (num_failed // 2) + 1):
-            for combo in combinations(range(len(self.data_fields)), t):
-                p = self.constraints[failed_indices[0]].modulus
-                if not p: continue
-                A = []; b = []
-                for i in range(t):
-                    c = self.constraints[failed_indices[i]]
-                    target = record_idx % (c.modulus if c.modulus else 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
-                    row = [int(c.weights[ci]) % p for ci in combo]
-                    known_sum = sum(int(c.weights[idx]) * int(data_np[idx]) for idx in range(len(self.data_fields)) if idx not in combo) % p
-                    rhs = (target - known_sum) % p
-                    A.append(row); b.append(rhs)
-
+                A = [[int(self.constraints[i].weights[ci]) % p for ci in erasure_indices] for i in c_subset]
+                b = [syndromes[i] % p for i in c_subset]
                 sol = solve_linear_system(A, b, p)
                 if sol:
-                    test_v = data_np.copy()
-                    for idx, ci in enumerate(combo): test_v[ci] = sol[idx]
-                    if self._verify_record(record_idx, test_v):
-                        for idx, ci in enumerate(combo): self.records[record_idx, ci] = sol[idx]
-                        return True
+                    for idx, ci in enumerate(erasure_indices): self.records[record_idx, ci] = (int(data_np[ci]) + sol[idx]) % p
+                    return True
+            return False
 
+        # Blind Corruption Recovery
+        for t in range(1, len(failed) + 1):
+            for combo in combinations(range(len(self.data_fields)), t):
+                for c_subset in combinations(failed, t):
+                    p = self.constraints[c_subset[0]].modulus
+                    if not p:
+                        A = [[int(self.constraints[i].weights[ci]) for ci in combo] for i in c_subset]
+                        b = [syndromes[i] for i in c_subset]
+                        try:
+                            sol = np.linalg.solve(np.array(A), np.array(b))
+                            test_v = data_np.copy()
+                            for idx, ci in enumerate(combo): test_v[ci] = int(data_np[ci] + round(sol[idx]))
+                            if self._verify_record(record_idx, test_v):
+                                for idx, ci in enumerate(combo): self.records[record_idx, ci] = test_v[ci]
+                                return True
+                        except: continue
+                    else:
+                        A = [[int(self.constraints[i].weights[ci]) % p for ci in combo] for i in c_subset]
+                        b = [syndromes[i] % p for i in c_subset]
+                        sol = solve_linear_system(A, b, p)
+                        if sol:
+                            test_v = data_np.copy()
+                            for idx, ci in enumerate(combo): test_v[ci] = (int(data_np[ci]) + sol[idx]) % p
+                            if self._verify_record(record_idx, test_v):
+                                for idx, ci in enumerate(combo): self.records[record_idx, ci] = test_v[ci]
+                                return True
+                    if len(failed) == t: break
+                if t > 4: break
         return False
 
     def _verify_record(self, record_idx: int, data_np: np.ndarray) -> bool:
         record = self.records[record_idx]
         for c in self.constraints:
-            if c.is_fiber: target = record_idx % (c.modulus if c.modulus else 251)
-            elif c.target is not None: target = c.target
-            else: target = record[c.stored_field_idx]
+            target = record_idx % (c.modulus or 251) if c.is_fiber else (c.target if c.target is not None else record[c.stored_field_idx])
             actual = int(np.dot(c.weights, data_np))
             if c.modulus: actual %= c.modulus
             if actual != target: return False
         return True
 
-    def get_data(self) -> List[List[int]]:
-        return self.records[:, :len(self.data_fields)].tolist()
+    def get_data(self) -> List[List[int]]: return self.records[:, :len(self.data_fields)].tolist()

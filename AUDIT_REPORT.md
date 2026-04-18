@@ -40,3 +40,12 @@
 1.  **Mnemonic Recovery**: `prototypes/wallet_recovery.py` - Recovers 12-word seeds from 10 words + invariants.
 2.  **Code Integrity**: `prototypes/code_integrity.py` - Character-level self-healing for source files.
 3.  **H.264 DC Recovery**: `prototypes/video_h264.py` - Macroblock DCT artifact elimination.
+
+### 1.5 Sector-Aware & Persistent Storage - COMPLETE
+*   **Status**: Implemented in `fsc_block.py` and `fsc_persistent_storage.py`.
+*   **Method**: Hierarchical healing (Internal Model 5 + External XOR Parity).
+*   **Performance**: LRU cache integrated for efficient file-backed block access.
+
+### 1.6 Generalized Syndrome Decoding - COMPLETE
+*   **Status**: Upgraded in `fsc_binary.py`.
+*   **Optimization**: Replaced brute-force combinatorial search with syndrome-based algebraic localization, enabling efficient k-fault recovery.

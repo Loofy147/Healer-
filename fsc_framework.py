@@ -1,19 +1,13 @@
-"""
-FSC Universal Framework
-========================
-Not just finding domains where closure exists —
-systematically ADDING it to any data structure.
-"""
-
 import numpy as np
-from typing import Any, Callable, Optional, List, Tuple
-import struct, hashlib, re
+from typing import List, Optional, Dict, Tuple, Callable, Any
 
 class FSCDescriptor:
-    def __init__(self, name, field, n_elements,
-                 invariant_fn, recover_fn, overhead, exact=True):
+    """Metadata describing an FSC invariant and its recovery properties."""
+    def __init__(self, name: str, field: str, n_elements: int,
+                 invariant_fn: Callable, recover_fn: Callable,
+                 overhead: int = 0, exact: bool = True):
         self.name         = name
-        self.field        = field
+        self.field        = field  # Algebra field (Z, Z_m, GF2, etc)
         self.n_elements   = n_elements
         self.invariant_fn = invariant_fn
         self.recover_fn   = recover_fn
@@ -202,7 +196,48 @@ class FSCAnalyzer:
         xors = np.bitwise_xor.reduce(reshaped, axis=1)
         if np.all(xors == xors[0]):
             candidates.append({'type': 'constant_xor', 'value': int(xors[0]), 'strength': 'exact', 'overhead_bytes': 1})
+
+        # Check for linear relationships
+        linear = FSCAnalyzer.find_linear_relationship(data, group_size)
+        for rel in linear:
+            candidates.append({'type': 'linear_relationship', 'details': rel, 'strength': 'exact', 'overhead_bytes': 0})
+
         return {'group_size': group_size, 'n_groups': n_groups, 'candidates': sorted(candidates, key=lambda x: x['overhead_bytes']), 'fsc_applicable': len(candidates) > 0}
+
+    @staticmethod
+    def find_linear_relationship(data: np.ndarray, group_size: int) -> list:
+        """
+        Detects if a field in the group is a linear combination of others.
+        e.g. v[2] = (a*v[0] + b*v[1]) % m
+        """
+        n_groups = len(data) // group_size
+        if n_groups < group_size: return []
+        reshaped = data[:n_groups * group_size].reshape(n_groups, group_size).astype(np.int64)
+
+        relationships = []
+        # Try each field as the dependent variable
+        for dep_idx in range(group_size):
+            indep_indices = [i for i in range(group_size) if i != dep_idx]
+            X = reshaped[:, indep_indices]
+            y = reshaped[:, dep_idx]
+
+            for p in [251, 65521]:
+                # Try to solve X * weights = y (mod p) using first group_size-1 records
+                if n_groups >= len(indep_indices):
+                    A = X[:len(indep_indices)]
+                    b = y[:len(indep_indices)]
+                    weights = solve_linear_system(A, b, p)
+                    if weights:
+                        # Verify on all groups
+                        weights_np = np.array(weights, dtype=np.int64)
+                        pred = (X @ weights_np) % p
+                        if np.all(pred == y % p):
+                            relationships.append({
+                                'dependent': dep_idx,
+                                'weights': {indep_indices[i]: int(weights[i]) for i in range(len(indep_indices))},
+                                'modulus': p
+                            })
+        return relationships
 
 class FSCHealer:
     def __init__(self, descriptor: FSCDescriptor):

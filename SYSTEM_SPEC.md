@@ -323,3 +323,25 @@ _Implements global constraint propagation for cross-record healing._
   - _Add a linear constraint involving fields from multiple records._
 - `method` **heal_cascade**`(self, known_corrupted: Set[tuple]) -> bool`
   - _Iteratively propagate fixes through the graph until all fields are recovered._
+
+---
+
+## Module: `fsc_block.py`
+
+### Class: `FSCBlock`
+*   `method` **__init__**`(self, block_id: int, size: int = 512, m: int = 251)`
+*   `method` **write**`(self, payload: bytes)` - Computes internal Model 5 invariants.
+*   `method` **heal**`(self) -> bool` - Internal single-byte localization.
+
+### Class: `FSCVolume`
+*   `method` **write_volume**`(self, data: bytes)` - Stripes data and computes cross-block parity.
+*   `method` **heal_volume**`(self) -> int` - Hierarchical healing engine.
+
+---
+
+## Module: `fsc_persistent_storage.py`
+
+### Class: `PersistentFSCVolume`
+*   `method` **__init__**`(self, filename, n_blocks, block_size, cache_size=100)`
+*   `method` **write**`(self, data: bytes)` - Persistent write with synced parity.
+*   `method` **heal_and_sync**`(self) -> int` - Persistent healing.
