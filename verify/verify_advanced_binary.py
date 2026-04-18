@@ -10,10 +10,10 @@ def test_model5_auto_localization():
         FSCField("f2", "INT32")
     ]
     schema = FSCSchema(fields)
-    # Three independent constraints
-    schema.add_constraint([1, 1, 0], label="f0+f1")
-    schema.add_constraint([0, 1, 1], label="f1+f2")
-    schema.add_constraint([1, 0, 1], label="f0+f2")
+    # Three independent constraints with modulus 251
+    schema.add_constraint([1, 1, 0], modulus=251, label="f0+f1")
+    schema.add_constraint([0, 1, 1], modulus=251, label="f1+f2")
+    schema.add_constraint([1, 0, 1], modulus=251, label="f0+f2")
 
     writer = FSCWriter(schema)
     original_data = [100, 20, 50]
@@ -37,15 +37,14 @@ def test_model5_auto_localization():
 
 def test_model4_fiber_binary():
     print("\nTesting Model 4 (Fiber) Zero-Overhead Binary...")
-    # In this test, we use a fiber constraint.
-    # sum(v) == pos % 251.
+    # In this test, we use a fiber constraint with modulus 251.
     fields = [
         FSCField("v0", "INT32"),
         FSCField("v1", "INT32")
     ]
     schema = FSCSchema(fields)
     # Positional constraint: v0 + v1 = pos % 251
-    schema.add_constraint([1, 1], is_fiber=True, label="fiber_sum")
+    schema.add_constraint([1, 1], is_fiber=True, modulus=251, label="fiber_sum")
 
     writer = FSCWriter(schema)
     # Record 0: pos 0 -> sum 0. [10, -10]
@@ -54,8 +53,6 @@ def test_model4_fiber_binary():
     writer.add_record([20, -19])
     writer.write("test_m4.fsc")
 
-    # Verify file size - should be small (Header + 2 fields + 1 constraint metadata + 2 records)
-    # No extra "sum" field per record.
     reader = FSCReader("test_m4.fsc")
 
     # Corrupt record 1, field 0

@@ -23,11 +23,12 @@ class FSCField:
 class FSCConstraint:
     """An algebraic constraint: sum(w_i * v_i) == target."""
     def __init__(self, weights: Any, target: Optional[int] = None,
-                 is_fiber: bool = False, label: str = ""):
+                 is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
         self.weights = weights # weights should be a numpy array for speed
         self.target = target   # fixed target if not fiber
         self.is_fiber = is_fiber
         self.label = label
+        self.modulus = modulus
         self.stored_field_idx = -1 # Index in the full record if it's a stored invariant
 
 class FSCSchema:
@@ -38,12 +39,12 @@ class FSCSchema:
         self.all_fields = list(fields) # Includes stored invariants
 
     def add_constraint(self, weights: List[int], target: Optional[int] = None,
-                       is_fiber: bool = False, label: str = ""):
+                       is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
         """Add a constraint. If not fiber and target is None, it's a 'Stored Sum' invariant."""
         if len(weights) != len(self.data_fields):
             raise ValueError(f"Constraint weights ({len(weights)}) must match data fields ({len(self.data_fields)})")
 
-        c = FSCConstraint(np.array(weights, dtype=np.int64), target, is_fiber, label)
+        c = FSCConstraint(np.array(weights, dtype=np.int64), target, is_fiber, label, modulus)
         if not is_fiber and target is None:
             field_name = label if label else f"sum_{len(self.constraints)}"
             inv_field = FSCField(field_name, "INT64")
@@ -83,6 +84,8 @@ class FSCWriter:
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
                 invariants = source_np[:, :n_data] @ c.weights
+                if c.modulus:
+                    invariants %= c.modulus
                 full_recs[:, c.stored_field_idx] = invariants
 
         self.records = np.vstack([self.records, full_recs]) if self.records.size else full_recs
@@ -91,7 +94,8 @@ class FSCWriter:
         with open(filename, "wb") as f:
             # Header
             f.write(b"FSC1")
-            f.write(struct.pack(">B HB B I", 2, len(self.schema.data_fields),
+            # Version 3: Added modulus to constraints
+            f.write(struct.pack(">B HB B I", 3, len(self.schema.data_fields),
                                 len(self.schema.constraints),
                                 len(self.schema.all_fields) - len(self.schema.data_fields),
                                 len(self.records)))
@@ -104,7 +108,9 @@ class FSCWriter:
             for c in self.schema.constraints:
                 ctype = 1 if c.is_fiber else 0
                 target = c.target if c.target is not None else 0
-                f.write(struct.pack(">B q b", ctype, target, c.stored_field_idx))
+                modulus = c.modulus if c.modulus is not None else 0
+                # ctype (B), target (q), s_idx (b), modulus (q) -> 1 + 8 + 1 + 8 = 18 bytes
+                f.write(struct.pack(">B q b q", ctype, target, c.stored_field_idx, modulus))
                 f.write(struct.pack(">" + "b"*len(c.weights), *c.weights.tolist()))
 
             # Pre-compile struct for performance
@@ -140,10 +146,17 @@ class FSCReader:
                 self.all_fields.append(FSCField(f"stored_{i}", "INT64"))
 
             for _ in range(n_constraints):
-                ctype, target, s_idx = struct.unpack(">B q b", f.read(10))
+                if version >= 3:
+                    ctype, target, s_idx, modulus = struct.unpack(">B q b q", f.read(18))
+                else:
+                    ctype, target, s_idx = struct.unpack(">B q b", f.read(10))
+                    modulus = 0
+
                 weights = list(struct.unpack(">" + "b"*n_data_fields, f.read(n_data_fields)))
-                c = FSCConstraint(np.array(weights, dtype=np.int64), target if ctype == 1 or target != 0 or s_idx == -1 else None,
-                                  is_fiber=(ctype == 1))
+                c = FSCConstraint(np.array(weights, dtype=np.int64),
+                                  target if ctype == 1 or target != 0 or s_idx == -1 else None,
+                                  is_fiber=(ctype == 1),
+                                  modulus=modulus if modulus != 0 else None)
                 c.stored_field_idx = s_idx
                 self.constraints.append(c)
 
@@ -168,8 +181,11 @@ class FSCReader:
 
         for c in self.constraints:
             actual = data_np @ c.weights
+            if c.modulus:
+                actual %= c.modulus
+
             if c.is_fiber:
-                targets = np.arange(n_recs) % 251
+                targets = np.arange(n_recs) % (c.modulus if c.modulus else 251)
             elif c.target is not None:
                 targets = np.full(n_recs, c.target, dtype=np.int64)
             else:
@@ -195,11 +211,14 @@ class FSCReader:
         failed_constraints = []
         actual_sums = {}
         for i, c in enumerate(self.constraints):
-            if c.is_fiber: target = record_idx % 251
+            if c.is_fiber: target = record_idx % (c.modulus if c.modulus else 251)
             elif c.target is not None: target = c.target
             else: target = record[c.stored_field_idx]
 
             actual = int(np.dot(c.weights, data_np))
+            if c.modulus:
+                actual %= c.modulus
+
             if actual != target:
                 failed_constraints.append((i, target))
                 actual_sums[i] = actual
@@ -211,8 +230,20 @@ class FSCReader:
                 c = self.constraints[i]
                 if c.weights[corrupted_field_idx] != 0:
                     actual = actual_sums.get(i, int(np.dot(c.weights, data_np)))
+                    if c.modulus: actual %= c.modulus
+
                     others = actual - (c.weights[corrupted_field_idx] * data_np[corrupted_field_idx])
-                    recovered_val = (target - others) // c.weights[corrupted_field_idx]
+                    if c.modulus:
+                        others %= c.modulus
+                        diff = (target - others) % c.modulus
+                        try:
+                            recovered_val = (diff * pow(int(c.weights[corrupted_field_idx]), -1, c.modulus)) % c.modulus
+                        except ValueError:
+                            continue # Try next constraint if not invertible
+                    else:
+                        diff = target - others
+                        recovered_val = diff // c.weights[corrupted_field_idx]
+
                     self.records[record_idx, corrupted_field_idx] = int(recovered_val)
                     return True
             return False
@@ -229,10 +260,22 @@ class FSCReader:
                     break
                 actual = actual_sums[i]
                 others = actual - (w * data_np[field_idx])
-                if (target - others) % w != 0:
-                    possible = False
-                    break
-                candidates.append((target - others) // w)
+
+                if c.modulus:
+                    others %= c.modulus
+                    diff = (target - others) % c.modulus
+                    try:
+                        inv_w = pow(int(w), -1, c.modulus)
+                        candidates.append((diff * inv_w) % c.modulus)
+                    except ValueError:
+                        possible = False
+                        break
+                else:
+                    diff = target - others
+                    if diff % w != 0:
+                        possible = False
+                        break
+                    candidates.append(diff // w)
 
             if possible and candidates and len(set(candidates)) == 1:
                 recovered_val = int(candidates[0])
@@ -240,10 +283,14 @@ class FSCReader:
                 temp_data_np[field_idx] = recovered_val
                 all_ok = True
                 for i, c in enumerate(self.constraints):
-                    if c.is_fiber: t = record_idx % 251
+                    if c.is_fiber: t = record_idx % (c.modulus if c.modulus else 251)
                     elif c.target is not None: t = c.target
                     else: t = record[c.stored_field_idx]
-                    if int(np.dot(c.weights, temp_data_np)) != t:
+
+                    chk_actual = int(np.dot(c.weights, temp_data_np))
+                    if c.modulus: chk_actual %= c.modulus
+
+                    if chk_actual != t:
                         all_ok = False
                         break
                 if all_ok:
