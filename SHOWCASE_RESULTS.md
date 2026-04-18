@@ -3,20 +3,21 @@
 ## 1. Wallet Mnemonic Recovery (Model 5)
 **Script**: `prototypes/wallet_recovery.py`
 **Description**: Recovers 2 missing words from a 12-word seed phrase using algebraic invariants.
-**Capabilities**: Supports gaps at ANY position in the phrase.
+**Status**: ✅ VERIFIED AGAINST GROUND TRUTH
 
-### Case 1: Middle Gaps
-- **Input**: `equal element ??? sword nature early lazy ??? bacon whip bridge cloud`
-- **Missing**: Words at index 2 and 7 (`vapor`, `drop`)
-- **Invariants**: `SUM=270, WEIGHTED=1718`
-- **Result**: `equal element vapor sword nature early lazy drop bacon whip bridge cloud`
-- **Status**: ✅ EXACT RECOVERY
+### Phrase Study A
+- **Original**: `blame equal element vapor sword write nature early lazy drop bacon whip`
+- **Missing**: Index 0 (`blame`), Index 5 (`write`)
+- **Invariants**: `SUM=306, WEIGHTED=2` (mod 2048)
+- **Result**: `blame equal element vapor sword write nature early lazy drop bacon whip`
+- **Recovery**: EXACT (Algebraic intersection solved)
 
-### Case 2: Boundary Gaps
-- **Input**: `??? element vapor sword nature early lazy drop bacon whip bridge ???`
-- **Missing**: Words at index 0 and 11 (`equal`, `cloud`)
-- **Result**: `equal element vapor sword nature early lazy drop bacon whip bridge cloud`
-- **Status**: ✅ EXACT RECOVERY
+### Phrase Study B
+- **Original**: `snack right wedding gun author canal pet rescue hand scheme head palace`
+- **Missing**: Index 4 (`author`), Index 11 (`palace`)
+- **Invariants**: `SUM=110, WEIGHTED=925` (mod 2048)
+- **Result**: `snack right wedding gun author canal pet rescue hand scheme head palace`
+- **Recovery**: EXACT (Algebraic intersection solved)
 
 ---
 
