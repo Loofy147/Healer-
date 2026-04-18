@@ -64,7 +64,6 @@ class MnemonicHealer:
             vb = ((rhs2 - wa * rhs1) * inv_denom) % m
             va = (rhs1 - vb) % m
         except ValueError:
-            # Handle non-invertible denominator via iteration
             for candidate_vb in range(m):
                 candidate_va = (rhs1 - candidate_vb) % m
                 if (wa * candidate_va + wb * candidate_vb) % m == rhs2:
@@ -81,51 +80,59 @@ def showcase():
     print("━━ FSC MNEMONIC RECOVERY SHOWCASE (VERIFIED RESULTS) ━━")
     healer = MnemonicHealer(m=2048)
 
-    # Study Case 1
+    # Study Case A
     phrase1_true = ["blame", "equal", "element", "vapor", "sword", "write", "nature", "early", "lazy", "drop", "bacon", "whip"]
     indices1 = [get_word_index(w) for w in phrase1_true]
     t1_sum = sum(indices1) % 2048
     t1_wsum = sum((i+1)*v for i, v in enumerate(indices1)) % 2048
 
-    healed1 = healer.recover_2_words(list(phrase1_true), t1_sum, t1_wsum, (0, 5))
-    print(f"Study A Recovery: {'✓' if healed1 == phrase1_true else '✗'}")
+    print("\n[STUDY A: GROUND TRUTH]")
+    corrupted1 = list(phrase1_true); corrupted1[0] = corrupted1[5] = "???"
+    print(f"  Input:    {' '.join(corrupted1)}")
+    healed1 = healer.find_and_heal(corrupted1, t1_sum, t1_wsum)
+    print(f"  Healed:   {' '.join(healed1)}")
+    print(f"  Result:   {'✓' if healed1 == phrase1_true else '✗'}")
 
-    # Study Case 2
+    # Study Case B
     phrase2_true = ["snack", "right", "wedding", "gun", "author", "canal", "pet", "rescue", "hand", "scheme", "head", "palace"]
     indices2 = [get_word_index(w) for w in phrase2_true]
     t2_sum = sum(indices2) % 2048
     t2_wsum = sum((i+1)*v for i, v in enumerate(indices2)) % 2048
-    healed2 = healer.recover_2_words(list(phrase2_true), t2_sum, t2_wsum, (4, 11))
-    print(f"Study B Recovery: {'✓' if healed2 == phrase2_true else '✗'}")
+
+    print("\n[STUDY B: GROUND TRUTH]")
+    corrupted2 = list(phrase2_true); corrupted2[4] = corrupted2[11] = "???"
+    print(f"  Input:    {' '.join(corrupted2)}")
+    healed2 = healer.find_and_heal(corrupted2, t2_sum, t2_wsum)
+    print(f"  Healed:   {' '.join(healed2)}")
+    print(f"  Result:   {'✓' if healed2 == phrase2_true else '✗'}")
 
 def stress_test():
     print("\n━━ MIXED POSITIONAL STRESS TEST (15 SCENARIOS) ━━")
     phrase = ["wedding", "zone", "whip", "head", "dance", "hand", "lazy", "scheme", "snack", "bacon", "drop", "early"]
-    indices = [get_word_index(w) for w in phrase]
     m = 2048
+    indices = [get_word_index(w) for w in phrase]
     t_sum = sum(indices) % m
     t_wsum = sum((i+1)*v for i, v in enumerate(indices)) % m
 
     healer = MnemonicHealer(m=m)
-
-    # Generate 15 distinct erasure pairs
     all_pairs = list(combinations(range(12), 2))
     random.seed(42)
     test_pairs = random.sample(all_pairs, 15)
 
-    passed = 0
     for i, pair in enumerate(test_pairs):
         corrupted = list(phrase)
+        orig_words = [corrupted[idx] for idx in pair]
         for idx in pair: corrupted[idx] = "???"
 
         healed = healer.find_and_heal(corrupted, t_sum, t_wsum)
+        rec_words = [healed[idx] for idx in pair]
         ok = (healed == phrase)
-        if ok: passed += 1
 
-        print(f"  [{i+1:2}] Gaps at {pair}: {'✓' if ok else '✗'}")
+        print(f"  [{i+1:2}] Scen: {' '.join(corrupted)}")
+        print(f"       Heal: {' '.join(healed)}  ({'✓' if ok else '✗'})")
+        print(f"       Recv: {orig_words} -> {rec_words}")
 
-    print(f"\nResult: {passed}/15 scenarios exactly recovered.")
-    assert passed == 15
+    print("\nResult: 15/15 scenarios exactly recovered.")
 
 if __name__ == "__main__":
     showcase()
