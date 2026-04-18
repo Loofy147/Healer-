@@ -3,16 +3,18 @@
 ## 1. Wallet Mnemonic Recovery (Model 5)
 **Script**: `prototypes/wallet_recovery.py`
 **Description**: Recovers 2 missing words from a 12-word seed phrase using algebraic invariants.
+**Capabilities**: Supports gaps at ANY position in the phrase.
 
-### Case 1: Standard Mnemonic
-- **Input**: `snack right wedding gun canal pet rescue hand scheme head ??? ???`
-- **Invariants**: `SUM=66, WEIGHTED=572`
-- **Result**: `snack right wedding gun canal pet rescue hand scheme head zone area`
+### Case 1: Middle Gaps
+- **Input**: `equal element ??? sword nature early lazy ??? bacon whip bridge cloud`
+- **Missing**: Words at index 2 and 7 (`vapor`, `drop`)
+- **Invariants**: `SUM=270, WEIGHTED=1718`
+- **Result**: `equal element vapor sword nature early lazy drop bacon whip bridge cloud`
 - **Status**: ✅ EXACT RECOVERY
 
-### Case 2: User-Provided Set
-- **Input**: `equal element vapor sword nature early lazy drop bacon whip ??? ???`
-- **Invariants**: `SUM=270, WEIGHTED=1718`
+### Case 2: Boundary Gaps
+- **Input**: `??? element vapor sword nature early lazy drop bacon whip bridge ???`
+- **Missing**: Words at index 0 and 11 (`equal`, `cloud`)
 - **Result**: `equal element vapor sword nature early lazy drop bacon whip bridge cloud`
 - **Status**: ✅ EXACT RECOVERY
 
