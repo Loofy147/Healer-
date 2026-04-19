@@ -1,68 +1,84 @@
-import hashlib
-import hmac
 import time
-import base58
+import multiprocessing
+from itertools import combinations
 from solders.keypair import Keypair
 from mnemonic import Mnemonic
-import multiprocessing
 
-# Load the official dictionary
 mnemo = Mnemonic("english")
 wordlist = mnemo.wordlist
 
-# The Targets
-WALLET_A_WORDS = ["snack", "right", "wedding", "gun", "canal", "pet", "rescue", "hand", "scheme", "head"]
-WALLET_A_PUBKEY = "7jDVmS8HBdDNdtGXSxepjcktvG6FzbPurZvYUVgY7TG5"
-
-WALLET_B_WORDS = ["equal", "element", "vapor", "sword", "nature", "early", "lazy", "drop", "bacon", "whip"]
-WALLET_B_PUBKEY = "93HMaKqUW6VWLJbYCvgViKn176wUcYFq2pfXh1LHkCfj"
-
+# Standard Solana Derivation Path
 DERIVATION_PATH = "m/44'/501'/0'/0'"
 
-def derive_solana_pubkey(mnemo_obj, phrase):
-    seed = mnemo_obj.to_seed(phrase)
-    kp = Keypair.from_seed_and_derivation_path(seed, DERIVATION_PATH)
-    return str(kp.pubkey())
-
 def worker(args):
-    base_words, target_address, start_idx, end_idx = args
-    mnemo_local = Mnemonic("english")
-    wordlist_local = mnemo_local.wordlist
+    target_addr, base_words, pos_pair, start_idx, end_idx = args
+    local_mnemo = Mnemonic("english")
+    local_wordlist = local_mnemo.wordlist
+
+    # Template for 12 words
+    template = [None] * 12
+    curr = 0
+    for i in range(12):
+        if i not in pos_pair:
+            template[i] = base_words[curr]
+            curr += 1
+
     for i in range(start_idx, end_idx):
-        w11 = wordlist_local[i]
+        w1 = local_wordlist[i]
         for j in range(2048):
-            w12 = wordlist_local[j]
-            test_phrase = " ".join(base_words + [w11, w12])
-            if mnemo_local.check(test_phrase):
-                try:
-                    if derive_solana_pubkey(mnemo_local, test_phrase) == target_address:
-                        return test_phrase
-                except:
-                    continue
+            w2 = local_wordlist[j]
+
+            p = list(template)
+            p[pos_pair[0]] = w1
+            p[pos_pair[1]] = w2
+            phrase = " ".join(p)
+
+            if local_mnemo.check(phrase):
+                seed = local_mnemo.to_seed(phrase)
+                kp = Keypair.from_seed_and_derivation_path(seed, DERIVATION_PATH)
+                if str(kp.pubkey()) == target_addr:
+                    return phrase
     return None
 
-def ignite_recovery(name, base_words, target):
-    print(f"[*] Targeting {name}: {target}")
+def recover_vault(name, target, base_words):
+    print(f"\n[*] INITIATING RECOVERY: {name}")
+    print(f"[*] Target Address: {target}")
     start_time = time.time()
 
+    all_pos = list(combinations(range(12), 2))
     cpu_cores = multiprocessing.cpu_count()
-    chunk_size = 2048 // cpu_cores
-    tasks = []
-    for i in range(cpu_cores):
-        s = i * chunk_size
-        e = 2048 if i == cpu_cores - 1 else (i + 1) * chunk_size
-        tasks.append((base_words, target, s, e))
 
-    with multiprocessing.Pool(processes=cpu_cores) as pool:
-        for result in pool.imap_unordered(worker, tasks):
-            if result:
-                latency = time.time() - start_time
-                print(f"[✓] FOUND in {latency:.2f}s: {result}")
-                pool.terminate()
-                return result
-    print("[-] Failed.")
+    for pos_pair in all_pos:
+        print(f"  [>] Testing positions {pos_pair}...")
+        chunk_size = 2048 // cpu_cores
+        tasks = []
+        for i in range(cpu_cores):
+            s = i * chunk_size
+            e = 2048 if i == cpu_cores - 1 else (i + 1) * chunk_size
+            tasks.append((target, base_words, pos_pair, s, e))
+
+        with multiprocessing.Pool(processes=cpu_cores) as pool:
+            for result in pool.imap_unordered(worker, tasks):
+                if result:
+                    latency = time.time() - start_time
+                    print(f"\n[✓] COLLISION CONFIRMED in {latency:.2f}s")
+                    print(f"[✓] Phrase: {result}")
+                    pool.terminate()
+                    return result
     return None
 
-if __name__ == '__main__':
-    ignite_recovery("Wallet A", WALLET_A_WORDS, WALLET_A_PUBKEY)
-    ignite_recovery("Wallet B", WALLET_B_WORDS, WALLET_B_PUBKEY)
+if __name__ == "__main__":
+    # The targets provided by the user
+    TARGET_A = "7jDVmS8HBdDNdtGXSxepjcktvG6FzbPurZvYUVgY7TG5"
+    WORDS_A  = ["snack", "right", "wedding", "gun", "canal", "pet", "rescue", "hand", "scheme", "head"]
+
+    TARGET_B = "93HMaKqUW6VWLJbYCvgViKn176wUcYFq2pfXh1LHkCfj"
+    WORDS_B  = ["equal", "element", "vapor", "sword", "nature", "early", "lazy", "drop", "bacon", "whip"]
+
+    print("=========================================================")
+    print(" PROJECT ELECTRICITY: SOLANA VAULT EXTRACTION ENGINE")
+    print("=========================================================")
+
+    # This takes significant CPU. Run locally for best results.
+    # recover_vault("Wallet A", TARGET_A, WORDS_A)
+    # recover_vault("Wallet B", TARGET_B, WORDS_B)
