@@ -6,6 +6,8 @@ This document outlines the engineering integration path and commercialization st
 
 FSC, via `libfsc`, is designed as a bare-metal primitive. It has no standard library dependencies (`#include <stdlib.h>` is not required for core logic), making it suitable for embedding in kernels, databases, and low-level protocols.
 
+**Note on IP Protection**: While the mathematical primitive is concise, the true engineering moat lies in the **Integration Complexity**. Successfully injecting zero-overhead algebraic healing into massive, high-performance C codebases (like SQLite or the Linux Kernel) requires precision engineering that cannot be easily replicated.
+
 ### 1.1 The SQLite Injection (Database Level)
 *   **Target**: The `sqlite3PagerGet()` function in the SQLite open-source engine.
 *   **Integration**: Inject `fsc_heal()` into the page retrieval logic.

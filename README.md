@@ -57,8 +57,12 @@ python3 demos/fsc_final_demo.py
 ./run_tests.sh
 ```
 
-## License
-MIT
+## License & Commercial Protection
+This project is **Dual-Licensed**:
+- **Public License**: Licensed under the **GNU Affero General Public License (AGPLv3)**. This ensures that the math remains open and any cloud-based integrations must contribute back to the community.
+- **Commercial License**: For proprietary integrations, enterprise support, and patent-safe deployments, a Commercial License is required.
+
+For a detailed breakdown of our IP protection strategy (including patents and hardware cores), see **[docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md)**.
 
 ## Commercialization & Real-World Deployment
 FSC is more than a prototype; it is a high-performance infrastructure primitive designed for deep integration into databases, kernels, and network stacks.
