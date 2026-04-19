@@ -30,3 +30,9 @@ The library is "production-ready" for:
 1. **SQLite Page Protection**: Injecting into `pager.c` to prevent bit-rot in B-Trees.
 2. **Satellite Telemetry**: Recovering radiation-induced bit-flips in packet headers.
 3. **NVMe Buffer Integrity**: Algebraic verification of DMA transfers.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

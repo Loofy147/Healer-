@@ -6,6 +6,8 @@ This document outlines the engineering integration path and commercialization st
 
 FSC, via `libfsc`, is designed as a bare-metal primitive. It has no standard library dependencies (`#include <stdlib.h>` is not required for core logic), making it suitable for embedding in kernels, databases, and low-level protocols.
 
+**Note on IP Protection**: While the mathematical primitive is concise, the true engineering moat lies in the **Integration Complexity**. Successfully injecting zero-overhead algebraic healing into massive, high-performance C codebases (like SQLite or the Linux Kernel) requires precision engineering that cannot be easily replicated.
+
 ### 1.1 The SQLite Injection (Database Level)
 *   **Target**: The `sqlite3PagerGet()` function in the SQLite open-source engine.
 *   **Integration**: Inject `fsc_heal()` into the page retrieval logic.
@@ -47,3 +49,9 @@ FSC is marketed as high-value Enterprise Infrastructure (B2B), not as a consumer
 *   **Market**: Samsung, Apple, Intel, Western Digital.
 *   **Integration**: Burn FSC logic directly into SSD controllers or 5G/6G modem chips.
 *   **Outcome**: Hardware-level error-correction acceleration, patenting the specific logic gate arrangement for the FSC algebraic solver.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

@@ -70,3 +70,9 @@ High-impact application using Sum and Weighted Sum invariants mod 2048 to recove
 | **MRI / 3D** | Fiber Sums | structural tensor | voxels recovered |
 | **HFT / Finance** | XOR Sums | streaming | nanosecond latency |
 | **Sensors** | Quadratic + Continuity | non-linear | sign resolved |
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

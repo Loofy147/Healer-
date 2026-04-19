@@ -61,3 +61,9 @@ The roadmap for real-world deployment focuses on three key pillars:
 3.  **Hardware Acceleration**: Transitioning the algebraic solvers to silicon for wire-speed error correction in storage controllers and modems.
 
 Refer to **[ROADMAP.md](docs/ROADMAP.md)** for the full commercialization strategy.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

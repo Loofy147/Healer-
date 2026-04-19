@@ -40,3 +40,9 @@ Executed a stress test on a mixed phrase: `wedding zone whip head dance hand laz
 - **Corrupted Record**: `[10, 99, 88, 40]` (Fields 1 and 2 corrupted)
 - **Healed Record**: `[10, 20, 30, 40]`
 - **Status**: ✅ SYSTEM SOLVED
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.
