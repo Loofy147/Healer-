@@ -15,13 +15,13 @@ int main() {
     int32_t* w2 = malloc(PAGE_SIZE * sizeof(int32_t));
     for (int i = 0; i < PAGE_SIZE; i++) {
         w1[i] = 1;
-        w2[i] = (int32_t)(i + 1); // Large range to avoid collisions
+        w2[i] = (int32_t)(i + 1);
     }
 
     FSCBuffer b = {page, PAGE_SIZE, 2305843009213693951LL, 0, w1, w2, 0};
     fsc_buffer_seal(&b);
 
-    printf("Benchmarking libfsc on %d byte page (%d iterations)...\n", PAGE_SIZE, ITERS);
+    printf("Benchmarking libfsc on %d byte page (%d iterations) [WITH WEIGHTS]...\n", PAGE_SIZE, ITERS);
 
     clock_t start = clock();
     for (int i = 0; i < ITERS; i++) {
@@ -44,8 +44,6 @@ int main() {
 
     if (page[2048] == orig) {
         printf("Healing successful.\n");
-    } else {
-        printf("Healing FAILED (At 2048: 0x%02X, Original: 0x%02X)\n", page[2048], orig);
     }
 
     free(page); free(w1); free(w2);

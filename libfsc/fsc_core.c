@@ -16,90 +16,127 @@ int64_t fsc_mod_inverse(int64_t a, int64_t m) {
     return (int64_t)x1;
 }
 
-int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
-    __int128_t sum = 0;
-    if (modulus > 0) {
-        for (size_t i = 0; i < n; i++) {
-            sum += (__int128_t)data[i] * (weights ? (int32_t)weights[i] : 1);
+int64_t fsc_calculate_sum8(const uint8_t* restrict data, const int32_t* restrict weights, size_t n, int64_t modulus) {
+    if (weights) {
+        int64_t sum = 0;
+        size_t i = 0;
+        // Unroll 4x
+        for (; i + 3 < n; i += 4) {
+            sum += (int64_t)data[i] * weights[i];
+            sum += (int64_t)data[i+1] * weights[i+1];
+            sum += (int64_t)data[i+2] * weights[i+2];
+            sum += (int64_t)data[i+3] * weights[i+3];
         }
-        sum %= modulus;
-        if (sum < 0) sum += modulus;
+        for (; i < n; i++) {
+            sum += (int64_t)data[i] * weights[i];
+        }
+        if (modulus > 0) {
+            sum %= modulus;
+            if (sum < 0) sum += modulus;
+        }
+        return sum;
     } else {
-        for (size_t i = 0; i < n; i++) {
-            sum += (__int128_t)data[i] * (weights ? (int32_t)weights[i] : 1);
+        uint64_t sum = 0;
+        size_t i = 0;
+        for (; i + 3 < n; i += 4) {
+            sum += data[i];
+            sum += data[i+1];
+            sum += data[i+2];
+            sum += data[i+3];
         }
+        for (; i < n; i++) {
+            sum += data[i];
+        }
+        if (modulus > 0) {
+            return (int64_t)(sum % (uint64_t)modulus);
+        }
+        return (int64_t)sum;
     }
-    return (int64_t)sum;
 }
 
-uint8_t fsc_heal_single8(const uint8_t* data, const int32_t* weights, size_t n,
+uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict weights, size_t n,
                         int64_t target, int64_t modulus, size_t corrupted_idx) {
-    __int128_t sum_others = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (i == corrupted_idx) continue;
-        sum_others += (__int128_t)data[i] * (weights ? (int32_t)weights[i] : 1);
+    int64_t sum_others = 0;
+    if (weights) {
+        for (size_t i = 0; i < n; i++) {
+            if (i == corrupted_idx) continue;
+            sum_others += (int64_t)data[i] * weights[i];
+        }
+    } else {
+        uint64_t sum = 0;
+        for (size_t i = 0; i < n; i++) {
+            if (i == corrupted_idx) continue;
+            sum += data[i];
+        }
+        sum_others = (int64_t)sum;
     }
+
     if (modulus > 0) {
         sum_others %= modulus;
         if (sum_others < 0) sum_others += modulus;
-        __int128_t rhs = (target - sum_others) % modulus;
+        int64_t rhs = (target - sum_others) % modulus;
         if (rhs < 0) rhs += modulus;
-        __int128_t w_j = weights ? (int32_t)weights[corrupted_idx] % modulus : 1;
-        if (w_j < 0) w_j += modulus;
-        int64_t inv_w = fsc_mod_inverse((int64_t)w_j, modulus);
-        __int128_t res = (rhs * inv_w) % modulus;
-        return (uint8_t)(res % 256);
+        int64_t w_j = weights ? (int32_t)weights[corrupted_idx] : 1;
+        int64_t inv_w = fsc_mod_inverse((int64_t)(w_j % modulus), modulus);
+        __int128_t res = (__int128_t)rhs * inv_w;
+        return (uint8_t)((res % modulus) % 256);
     } else {
         int64_t w_j = weights ? (int64_t)weights[corrupted_idx] : 1;
-        return (uint8_t)((target - (int64_t)sum_others) / w_j);
+        return (uint8_t)((target - sum_others) / w_j);
     }
 }
 
-int64_t fsc_calculate_sum64(const int64_t* data, const int32_t* weights, size_t n, int64_t modulus) {
+int64_t fsc_calculate_sum64(const int64_t* restrict data, const int32_t* restrict weights, size_t n, int64_t modulus) {
     __int128_t sum = 0;
-    for (size_t i = 0; i < n; i++) {
-        __int128_t v = data[i];
-        __int128_t w = weights ? (int32_t)weights[i] : 1;
-        if (modulus > 0) {
-            sum = (sum + (v % modulus * (w % modulus)) % modulus) % modulus;
-        } else {
-            sum += v * w;
+    if (weights) {
+        for (size_t i = 0; i < n; i++) {
+            sum += (__int128_t)data[i] * weights[i];
         }
-    }
-    if (modulus > 0 && sum < 0) sum += modulus;
-    return (int64_t)sum;
-}
-
-int64_t fsc_heal_single64(const int64_t* data, const int32_t* weights, size_t n,
-                         int64_t target, int64_t modulus, size_t corrupted_idx) {
-    __int128_t sum_others = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (i == corrupted_idx) continue;
-        __int128_t v = data[i];
-        __int128_t w = weights ? (int32_t)weights[i] : 1;
-        if (modulus > 0) {
-            sum_others = (sum_others + (v % modulus * (w % modulus)) % modulus) % modulus;
-        } else {
-            sum_others += v * w;
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            sum += data[i];
         }
     }
     if (modulus > 0) {
-        __int128_t rhs = (target - sum_others) % modulus;
+        sum %= modulus;
+        if (sum < 0) sum += modulus;
+    }
+    return (int64_t)sum;
+}
+
+int64_t fsc_heal_single64(const int64_t* restrict data, const int32_t* restrict weights, size_t n,
+                         int64_t target, int64_t modulus, size_t corrupted_idx) {
+    __int128_t sum_others = 0;
+    if (weights) {
+        for (size_t i = 0; i < n; i++) {
+            if (i == corrupted_idx) continue;
+            sum_others += (__int128_t)data[i] * weights[i];
+        }
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            if (i == corrupted_idx) continue;
+            sum_others += data[i];
+        }
+    }
+
+    if (modulus > 0) {
+        sum_others %= modulus;
+        if (sum_others < 0) sum_others += modulus;
+        int64_t rhs = (target - (int64_t)sum_others) % modulus;
         if (rhs < 0) rhs += modulus;
-        __int128_t w_j = weights ? (int32_t)weights[corrupted_idx] % modulus : 1;
-        if (w_j < 0) w_j += modulus;
-        int64_t inv_w = fsc_mod_inverse((int64_t)w_j, modulus);
-        __int128_t res = (rhs * inv_w) % modulus;
-        return (int64_t)res;
+        int64_t w_j = weights ? (int32_t)weights[corrupted_idx] : 1;
+        int64_t inv_w = fsc_mod_inverse((int64_t)(w_j % modulus), modulus);
+        __int128_t res = (__int128_t)rhs * inv_w;
+        return (int64_t)(res % modulus);
     } else {
         int64_t w_j = weights ? (int64_t)weights[corrupted_idx] : 1;
         return (target - (int64_t)sum_others) / w_j;
     }
 }
 
-int fsc_heal_multi64(int64_t* data, const int32_t* weights, size_t n_data,
-                    const int64_t* targets, const int64_t* moduli,
-                    size_t k, const size_t* corrupted_indices) {
+int fsc_heal_multi64(int64_t* restrict data, const int32_t* restrict weights, size_t n_data,
+                    const int64_t* restrict targets, const int64_t* restrict moduli,
+                    size_t k, const size_t* restrict corrupted_indices) {
     if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
     int64_t p = moduli[0];
     __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
@@ -179,19 +216,18 @@ int fsc_buffer_heal(FSCBuffer* b) {
         if (s2 < 0) s2 += b->modulus;
 
         for (size_t i = 0; i < b->len; i++) {
-            __int128_t w1 = b->weights ? (int32_t)b->weights[i] % b->modulus : 1;
-            __int128_t w2 = (int32_t)b->weights2[i] % b->modulus;
+            int64_t w1 = b->weights ? (int32_t)b->weights[i] % b->modulus : 1;
+            int64_t w2 = (int32_t)b->weights2[i] % b->modulus;
             if (w1 < 0) w1 += b->modulus;
             if (w2 < 0) w2 += b->modulus;
 
-            int64_t inv_w1 = fsc_mod_inverse((int64_t)w1, b->modulus);
+            int64_t inv_w1 = fsc_mod_inverse(w1, b->modulus);
             if (inv_w1 == 0 && w1 != 1) continue;
 
-            __int128_t delta = (s1 * inv_w1) % b->modulus;
-            if ((delta * w2) % b->modulus == s2) {
+            __int128_t delta = (__int128_t)s1 * inv_w1;
+            if (((delta % b->modulus) * w2) % b->modulus == s2) {
                 uint8_t original = b->buffer[i];
-                // delta can be added to original to fix both syndromes
-                b->buffer[i] = (uint8_t)(((__int128_t)original + delta) % b->modulus);
+                b->buffer[i] = (uint8_t)(((__int128_t)original + (delta % b->modulus)) % b->modulus);
                 if (fsc_buffer_verify(b)) return (int)i;
                 b->buffer[i] = original;
             }
