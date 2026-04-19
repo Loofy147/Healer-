@@ -1,4 +1,15 @@
 /**
+ * FSC: Forward Sector Correction
+ * Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+ *
+ * PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
+ * COMMERCIAL LICENSE: Required for proprietary/enterprise use.
+ *
+ * PATENT PENDING: Industrial applications of these algebraic primitives
+ * for database pages, kernel block devices, and network protocols.
+ */
+
+/**
  * libfsc.h - Bare-metal Forward Sector Correction (FSC) Library
  *
  * Provides zero-dependency, non-allocating, self-healing data primitives.
@@ -12,6 +23,14 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/*
+ * FSC_COMMERCIAL_BUILD: Toggle for advanced enterprise features.
+ * When disabled (default), only core algebraic healing is available.
+ */
+#ifndef FSC_COMMERCIAL_BUILD
+#define FSC_COMMERCIAL_BUILD 0
 #endif
 
 #define FSC_MAX_K 16
@@ -84,6 +103,12 @@ int fsc_buffer_verify(FSCBuffer* b);
  * Returns index of healed byte, or -1 if failed.
  */
 int fsc_buffer_heal(FSCBuffer* b);
+
+/**
+ * fsc_audit_log: Advanced forensic logging for data corruption events.
+ * (Commercial License Required)
+ */
+void fsc_audit_log(const char* event_type, int index, int64_t magnitude);
 
 #ifdef __cplusplus
 }
