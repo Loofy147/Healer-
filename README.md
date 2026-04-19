@@ -70,3 +70,9 @@ FSC is more than a prototype; it is a high-performance infrastructure primitive 
 For a detailed vision of how FSC transforms the reliability of SQLite, Linux, and Cloud Infrastructure, see the **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 Illustrative C integration shims can be found in **`libfsc/shims/`**.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

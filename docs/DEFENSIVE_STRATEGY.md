@@ -24,3 +24,9 @@ For maximum protection, we are moving the FSC algebraic solvers into hardware.
 
 ---
 *For inquiries regarding commercial licensing or patent partnerships, contact the FSC core team.*
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

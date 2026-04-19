@@ -345,3 +345,9 @@ _Implements global constraint propagation for cross-record healing._
 *   `method` **__init__**`(self, filename, n_blocks, block_size, cache_size=100)`
 *   `method` **write**`(self, data: bytes)` - Persistent write with synced parity.
 *   `method` **heal_and_sync**`(self) -> int` - Persistent healing.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

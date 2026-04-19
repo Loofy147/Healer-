@@ -49,3 +49,9 @@ FSC is marketed as high-value Enterprise Infrastructure (B2B), not as a consumer
 *   **Market**: Samsung, Apple, Intel, Western Digital.
 *   **Integration**: Burn FSC logic directly into SSD controllers or 5G/6G modem chips.
 *   **Outcome**: Hardware-level error-correction acceleration, patenting the specific logic gate arrangement for the FSC algebraic solver.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.
