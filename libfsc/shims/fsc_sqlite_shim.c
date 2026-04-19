@@ -3,31 +3,38 @@
  *
  * This shim demonstrates where libfsc would be injected into the
  * SQLite sqlite3PagerGet() logic to provide transparent healing.
+ * Uses Model 5 (Dual Constraint) for automatic localization.
  */
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "../libfsc.h"
+
+#define PAGE_SIZE 4096
 
 /* Mock SQLite Page structure */
 typedef struct {
     int pgno;
-    unsigned char aData[4096];
-    int64_t fsc_syndrome;
+    unsigned char aData[PAGE_SIZE];
+    int64_t fsc_target1;
+    int64_t fsc_target2;
 } PgHdr;
+
+/* Global weights for the shim demo */
+int32_t w1[PAGE_SIZE];
+int32_t w2[PAGE_SIZE];
 
 /* Mock SQLite Pager function with FSC injection */
 int sqlite3PagerGet_fsc(PgHdr *pPage) {
-    // 1. Original SQLite logic: Load page from disk
-    // ... (Disk I/O)
-
-    // 2. FSC Injection: Verify and Heal
     FSCBuffer b = {
         .buffer = pPage->aData,
-        .len = 4096,
+        .len = PAGE_SIZE,
         .modulus = 2305843009213693951LL, // Mersenne Prime p=2^61-1
-        .target = pPage->fsc_syndrome,
-        .weights = NULL // Use default weights for simplicity
+        .target = pPage->fsc_target1,
+        .target2 = pPage->fsc_target2,
+        .weights = w1,
+        .weights2 = w2
     };
 
     if (!fsc_buffer_verify(&b)) {
@@ -45,30 +52,42 @@ int sqlite3PagerGet_fsc(PgHdr *pPage) {
 }
 
 int main() {
+    for(int i=0; i<PAGE_SIZE; i++) {
+        w1[i] = 1;
+        w2[i] = i + 1;
+    }
+
     PgHdr page;
     page.pgno = 1;
-    memset(page.aData, 'A', 4096);
+    memset(page.aData, 'A', PAGE_SIZE);
 
     // Seal the page with FSC
     FSCBuffer b = {
         .buffer = page.aData,
-        .len = 4096,
+        .len = PAGE_SIZE,
         .modulus = 2305843009213693951LL,
-        .weights = NULL
+        .weights = w1,
+        .weights2 = w2
     };
     fsc_buffer_seal(&b);
-    page.fsc_syndrome = b.target;
+    page.fsc_target1 = b.target;
+    page.fsc_target2 = b.target2;
 
     printf("--- SQLite FSC Shim Demo ---\n");
-    printf("Page %d initialized. FSC Syndrome: %ld\n", page.pgno, page.fsc_syndrome);
+    printf("Page %d initialized. FSC Targets: %ld, %ld\n", page.pgno, page.fsc_target1, page.fsc_target2);
 
     // Simulate corruption
     printf("\n[CORRUPTION] Flipping bit in SQLite page data...\n");
+    unsigned char orig = page.aData[100];
     page.aData[100] ^= 0xFF;
 
     // Retrieve and heal
     if (sqlite3PagerGet_fsc(&page) == 0) {
-        printf("RESULT: SQLite recovered bit-perfect data from the corrupted page.\n");
+        if (page.aData[100] == orig) {
+            printf("RESULT: SQLite recovered bit-perfect data from the corrupted page.\n");
+        } else {
+            printf("RESULT: Healing reported success but data mismatch (Localization failure).\n");
+        }
     }
 
     return 0;
