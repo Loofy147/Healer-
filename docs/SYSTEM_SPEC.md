@@ -2,7 +2,7 @@
 
 This document provides a comprehensive list of all classes, methods, and functions within the FSC framework.
 
-## Module: `fsc_framework.py`
+## Module: `fsc/fsc_framework.py`
 
 ### Class: `FSCAnalyzer`
 _Given a dataset, detect if a linear integer invariant exists_
@@ -49,7 +49,7 @@ _Universal FSC healing engine._
 
 ---
 
-## Module: `fsc_structural.py`
+## Module: `fsc/fsc_structural.py`
 
 ### Class: `AlgebraicFormat`
 _A full data format defined by multiple intersecting linear constraints._
@@ -113,7 +113,7 @@ _Base class for data types that embed a linear invariant._
 
 ---
 
-## Module: `fsc_binary.py`
+## Module: `fsc/fsc_binary.py`
 
 ### Class: `FSCField`
 - `method` **__init__**`(self, name: str, ftype: str, recoverable: bool = True, weight: int = 1)`
@@ -326,7 +326,7 @@ _Implements global constraint propagation for cross-record healing._
 
 ---
 
-## Module: `fsc_block.py`
+## Module: `fsc/fsc_block.py`
 
 ### Class: `FSCBlock`
 *   `method` **__init__**`(self, block_id: int, size: int = 512, m: int = 251)`
@@ -339,7 +339,7 @@ _Implements global constraint propagation for cross-record healing._
 
 ---
 
-## Module: `fsc_persistent_storage.py`
+## Module: `fsc/fsc_persistent_storage.py`
 
 ### Class: `PersistentFSCVolume`
 *   `method` **__init__**`(self, filename, n_blocks, block_size, cache_size=100)`

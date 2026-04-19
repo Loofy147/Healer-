@@ -26,18 +26,18 @@ Every structured record (e.g., a sensor reading, a financial tick, or a network 
 5. **Algebraic Format**: Multi-constraint overdetermination (Self-identifying corruption).
 
 ## Repository Structure
-- **`fsc_framework.py`**: Universal FSC healing engine.
-- **`fsc_structural.py`**: Core implementation of the 5 Structural Models.
-- **`fsc_binary.py`**: Binary file format (.fsc) with Model 4/5 support.
-- **`fsc_page.py`**: 2D structural integrity for binary blocks.
-- **`verify/`**: Suite of verification tests for each module.
+- **`fsc/fsc_framework.py`**: Universal FSC healing engine.
+- **`fsc/fsc_structural.py`**: Core implementation of the 5 Structural Models.
+- **`fsc/fsc_binary.py`**: Binary file format (.fsc) with Model 4/5 support.
+- **`fsc/fsc_page.py`**: 2D structural integrity for binary blocks.
+- **`tests/`**: Suite of verification tests for each module.
 - **`demos/`**: Practical demonstrations of the framework in action.
 - **`prototypes/`**: Specialized domain-specific demonstrations (Audio, Medical, Video).
 
 ## Documentation & Audits
-- **[SYSTEM_SPEC.md](SYSTEM_SPEC.md)**: Full API reference and method signatures.
-- **[AUDIT_REPORT.md](AUDIT_REPORT.md)**: Deep audit of system quality and future roadmap.
-- **[FSC_Framework_Documentation.md](FSC_Framework_Documentation.md)**: Detailed mathematical foundation and specifications.
+- **[docs/SYSTEM_SPEC.md](docs/SYSTEM_SPEC.md)**: Full API reference and method signatures.
+- **[docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)**: Deep audit of system quality and future roadmap.
+- **[docs/FSC_Framework_Documentation.md](docs/FSC_Framework_Documentation.md)**: Detailed mathematical foundation and specifications.
 
 ## Getting Started
 
@@ -59,3 +59,10 @@ python3 demos/fsc_final_demo.py
 
 ## License
 MIT
+
+## Commercialization & Real-World Deployment
+FSC is more than a prototype; it is a high-performance infrastructure primitive designed for deep integration into databases, kernels, and network stacks.
+
+For a detailed vision of how FSC transforms the reliability of SQLite, Linux, and Cloud Infrastructure, see the **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+Illustrative C integration shims can be found in **`libfsc/shims/`**.

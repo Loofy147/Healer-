@@ -34,7 +34,7 @@ Executed a stress test on a mixed phrase: `wedding zone whip head dance hand laz
 ---
 
 ## 3. Multi-Fault Binary Recovery
-**Test**: `verify/verify_multifault_binary.py`
+**Test**: `tests/verify_multifault_binary.py`
 **Description**: Automatic healing of 2 simultaneous corruptions in a `.fsc` file.
 
 - **Corrupted Record**: `[10, 99, 88, 40]` (Fields 1 and 2 corrupted)

@@ -1,5 +1,5 @@
 import numpy as np
-from fsc_framework import FSCFactory, FSCHealer
+from fsc.fsc_framework import FSCFactory, FSCHealer
 import time
 
 def demo_ambisonics():

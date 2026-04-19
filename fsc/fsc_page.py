@@ -2,7 +2,7 @@ import struct
 import os
 import numpy as np
 from typing import List, Optional, Dict
-from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 
 class FSCPageWriter:
     def __init__(self, schema: FSCSchema, page_size: int = 10):

@@ -3,7 +3,7 @@ import struct
 import io
 from typing import List, Dict, Any, Tuple, Optional
 from itertools import combinations
-from fsc_framework import solve_linear_system
+from fsc.fsc_framework import solve_linear_system
 
 class FSCField:
     """A single field definition within an FSC record."""

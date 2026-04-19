@@ -1,8 +1,8 @@
 import numpy as np
-from fsc_framework import FSCFactory, FSCHealer, FSCAnalyzer
-from fsc_structural import FiberRecord, AlgebraicFormat, BalancedGroup
-from fsc_storage import StructuralLog
-from fsc_network import StructuralPacket
+from fsc.fsc_framework import FSCFactory, FSCHealer, FSCAnalyzer
+from fsc.fsc_structural import FiberRecord, AlgebraicFormat, BalancedGroup
+from fsc.fsc_storage import StructuralLog
+from fsc.fsc_network import StructuralPacket
 
 def section(name):
     print("\n" + "━" * 60)

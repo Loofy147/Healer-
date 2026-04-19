@@ -17,7 +17,7 @@ The FSC connection:
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from fsc_multifault import poly_eval, lagrange_recover, solve_linear_system
+from fsc.fsc_multifault import poly_eval, lagrange_recover, solve_linear_system
 
 def gf_inv(a, p): return pow(int(a), p-2, p)
 

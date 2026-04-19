@@ -6,7 +6,7 @@ import os
 import numpy as np
 # Ensure we can import from current directory
 sys.path.insert(0, os.getcwd())
-from fsc_framework import FSCFactory, FSCAnalyzer
+from fsc.fsc_framework import FSCFactory, FSCAnalyzer
 
 def encode(desc, groups):
     return [desc.encode(g) for g in groups]

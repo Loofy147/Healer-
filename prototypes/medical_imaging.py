@@ -6,7 +6,7 @@ to protect sensitive patient and scan metadata from corruption during
 transmission or PACS storage.
 """
 
-from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 
 def demo_medical():
