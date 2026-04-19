@@ -7,7 +7,7 @@ This allows unique identification AND recovery of any single corrupted field.
 """
 
 from typing import List, Optional, Dict
-from fsc_structural import AlgebraicFormat
+from fsc.fsc_structural import AlgebraicFormat
 
 class StructuralLog:
     """

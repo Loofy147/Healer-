@@ -1,6 +1,6 @@
 import numpy as np
-from fsc_binary import FSCField, FSCSchema
-from fsc_page import FSCPageWriter, FSCPageReader
+from fsc.fsc_binary import FSCField, FSCSchema
+from fsc.fsc_page import FSCPageWriter, FSCPageReader
 import os
 
 def test_2d_healing():

@@ -8,7 +8,7 @@ exactly recovered, eliminating visual artifacts without retransmission.
 """
 
 import numpy as np
-from fsc_structural import AlgebraicFormat
+from fsc.fsc_structural import AlgebraicFormat
 
 def demo_video_h264():
     print("━━ PROTOTYPE: VIDEO H.264 ARTIFACT RECOVERY ━━")

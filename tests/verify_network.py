@@ -1,4 +1,4 @@
-from fsc_network import StructuralPacket
+from fsc.fsc_network import StructuralPacket
 import random
 
 def test_network_healing():

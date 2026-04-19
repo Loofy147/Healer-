@@ -2,7 +2,7 @@ import os
 import numpy as np
 from typing import List, Optional, Dict
 from collections import OrderedDict
-from fsc_block import FSCBlock, FSCVolume
+from fsc.fsc_block import FSCBlock, FSCVolume
 
 class PersistentFSCVolume:
     """

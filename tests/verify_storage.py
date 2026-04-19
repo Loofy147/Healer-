@@ -1,4 +1,4 @@
-from fsc_storage import StructuralLog
+from fsc.fsc_storage import StructuralLog
 import random
 
 def test_stream_healing():

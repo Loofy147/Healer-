@@ -1,7 +1,7 @@
 import numpy as np
 import struct
 from typing import List, Optional, Tuple
-from fsc_framework import solve_linear_system
+from fsc.fsc_framework import solve_linear_system
 
 class FSCBlock:
     """

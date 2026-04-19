@@ -1,4 +1,4 @@
-from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 import random
 

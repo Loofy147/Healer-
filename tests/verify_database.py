@@ -1,5 +1,5 @@
 import numpy as np
-from fsc_database import StructuralTable
+from fsc.fsc_database import StructuralTable
 import random
 
 def test_database_healing():

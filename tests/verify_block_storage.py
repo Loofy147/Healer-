@@ -5,7 +5,7 @@ import numpy as np
 # Add parent directory to sys.path to import local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fsc_block import FSCVolume
+from fsc.fsc_block import FSCVolume
 
 def test_block_storage():
     print("━━ TESTING SECTOR-AWARE BLOCK STORAGE (Hierarchical Healing) ━━")

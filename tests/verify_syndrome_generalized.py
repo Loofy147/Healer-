@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 
 def test_syndrome_k2():
     print("━━ TESTING GENERALIZED SYNDROME DECODING (k=2) ━━")

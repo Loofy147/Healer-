@@ -1,5 +1,5 @@
 import numpy as np
-from fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 
 def test_model5_auto_localization():
