@@ -59,3 +59,10 @@ python3 demos/fsc_final_demo.py
 
 ## License
 MIT
+
+## Commercialization & Real-World Deployment
+FSC is more than a prototype; it is a high-performance infrastructure primitive designed for deep integration into databases, kernels, and network stacks.
+
+For a detailed vision of how FSC transforms the reliability of SQLite, Linux, and Cloud Infrastructure, see the **[ROADMAP.md](ROADMAP.md)**.
+
+Illustrative C integration shims can be found in **`libfsc/shims/`**.

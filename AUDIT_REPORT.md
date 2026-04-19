@@ -49,3 +49,15 @@
 ### 1.6 Generalized Syndrome Decoding - COMPLETE
 *   **Status**: Upgraded in `fsc_binary.py`.
 *   **Optimization**: Replaced brute-force combinatorial search with syndrome-based algebraic localization, enabling efficient k-fault recovery.
+
+---
+
+## 4. Strategic Outlook (v4 Expansion)
+
+### 4.1 Enterprise Integration Roadmap
+The roadmap for real-world deployment focuses on three key pillars:
+1.  **Bare-metal Injection**: Leveraging `libfsc`'s zero-dependency nature to harden mission-critical software like SQLite and the Linux Kernel.
+2.  **Infrastructure Licensing**: Scaling the technology by partnering with Cloud Service Providers (CSPs) to optimize storage durability vs. cost.
+3.  **Hardware Acceleration**: Transitioning the algebraic solvers to silicon for wire-speed error correction in storage controllers and modems.
+
+Refer to **[ROADMAP.md](ROADMAP.md)** for the full commercialization strategy.
