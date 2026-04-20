@@ -38,7 +38,8 @@ int main() {
     assert(mem[10] == original_val);
     assert(fsc_buffer_verify(&b) == 1);
 
-    // Test 2: Multi-Fault (k=2)
+    // Test 2: Multi-Fault 64-bit (k=2)
+    printf("Testing Multi-fault 64-bit...\n");
     int64_t data[] = {10, 20, 30};
     int32_t weights[] = {1, 1, 1,  1, 2, 3};
     int64_t targets[] = {60, 140};
@@ -50,6 +51,20 @@ int main() {
     assert(res == FSC_SUCCESS);
     assert(data[0] == 10 && data[1] == 20);
     printf("Multi-fault 64-bit recovery Passed.\n");
+
+    // Test 3: Multi-Fault 8-bit (k=2)
+    printf("Testing Multi-fault 8-bit...\n");
+    uint8_t data8[] = {10, 20, 30};
+    int32_t weights8[] = {1, 1, 1,  1, 2, 3};
+    int64_t targets8[] = {60, 140};
+    int64_t moduli8[] = {251, 251};
+    size_t corrupted8[] = {0, 1};
+
+    data8[0] = 255; data8[1] = 255;
+    res = fsc_heal_multi8(data8, weights8, 3, targets8, moduli8, 2, corrupted8);
+    assert(res == FSC_SUCCESS);
+    assert(data8[0] == 10 && data8[1] == 20);
+    printf("Multi-fault 8-bit recovery Passed.\n");
 
     printf("All libfsc tests passed!\n");
     return 0;

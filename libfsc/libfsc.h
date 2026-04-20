@@ -72,6 +72,13 @@ int fsc_heal_multi64(int64_t* data, const int32_t* weights, size_t n_data,
                     size_t k_faults, const size_t* corrupted_indices);
 
 /**
+ * fsc_heal_multi8: Recovers K corrupted uint8_t fields.
+ */
+int fsc_heal_multi8(uint8_t* data, const int32_t* weights, size_t n_data,
+                   const int64_t* targets, const int64_t* moduli,
+                   size_t k_faults, const size_t* corrupted_indices);
+
+/**
  * fsc_mod_inverse: Extended Euclidean Algorithm.
  */
 int64_t fsc_mod_inverse(int64_t a, int64_t m);
