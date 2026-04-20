@@ -58,16 +58,22 @@ class FSCPageReader:
         max_iters = 10
         iters = 0
 
+        # Performance: Cache row status to avoid redundant O(N*M) verifications
+        row_status = [self.reader._verify_record(i, self.data_records[i])
+                      for i in range(len(self.data_records))]
+
         while changed and iters < max_iters:
             changed = False
             iters += 1
 
             # Phase A: Row Healing (Automatic Model 5)
             for i in range(len(self.data_records)):
-                old_row = self.data_records[i].copy()
-                if self.reader.verify_and_heal(i):
-                    if not np.array_equal(self.data_records[i], old_row):
-                        changed = True
+                if not row_status[i]:
+                    old_row = self.data_records[i].copy()
+                    if self.reader.verify_and_heal(i):
+                        if not np.array_equal(self.data_records[i], old_row):
+                            changed = True
+                            row_status[i] = True
 
             # Phase B: Column Healing
             current_sums = np.sum(self.data_records, axis=0)
@@ -77,28 +83,28 @@ class FSCPageReader:
             else:
                 diffs = self.parity_record - current_sums
 
-            for col_idx in np.where(diffs != 0)[0]:
-                diff = diffs[col_idx]
-                dirty_rows = []
-                for row_idx in range(len(self.data_records)):
-                    # A row is 'dirty' if it fails row-wise verification
-                    if not self.reader._verify_record(row_idx, self.data_records[row_idx]):
-                        dirty_rows.append(row_idx)
+            dirty_col_indices = np.where(diffs != 0)[0]
+            if len(dirty_col_indices) > 0:
+                dirty_row_indices = [i for i, ok in enumerate(row_status) if not ok]
 
-                if len(dirty_rows) == 1:
+                for col_idx in dirty_col_indices:
+                    diff = diffs[col_idx]
                     # Exactly one erasure in this column!
-                    row_idx = dirty_rows[0]
-                    if self.mod:
-                        self.data_records[row_idx, col_idx] = (self.data_records[row_idx, col_idx] + diff) % self.mod
-                    else:
-                        self.data_records[row_idx, col_idx] += diff
-                    changed = True
+                    if len(dirty_row_indices) == 1:
+                        row_idx = dirty_row_indices[0]
+                        if self.mod:
+                            self.data_records[row_idx, col_idx] = (self.data_records[row_idx, col_idx] + diff) % self.mod
+                        else:
+                            self.data_records[row_idx, col_idx] += diff
 
-        # Final Verification
-        for i in range(len(self.data_records)):
-            if not self.reader._verify_record(i, self.data_records[i]):
-                return False
-        return True
+                        # Re-verify only the modified row
+                        row_status[row_idx] = self.reader._verify_record(row_idx, self.data_records[row_idx])
+                        if row_status[row_idx]:
+                            # Update dirty list for subsequent columns in this iteration
+                            dirty_row_indices = [i for i, ok in enumerate(row_status) if not ok]
+                        changed = True
+
+        return all(row_status)
 
     def get_data(self) -> List[List[int]]:
         return self.data_records.tolist()
