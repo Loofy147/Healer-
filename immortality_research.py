@@ -193,55 +193,57 @@ USE_CASES = [
     },
     {
         "id": "T4-A",
-        "name": "IMMORTAL GENOME VAULT",
-        "tier": "Science",
+        "name": "DATABASE FORGERY ENGINE",
+        "tier": "Offensive",
         "concept": (
-            "An immortal genome vault = medical immortality. "
-            "At 1B genomes stored (2040): $1B ARR, O(1) ops. "
-            "Infinite margin."
+            "Use the O(1) Galois Field solver to invisibly modify data "
+            "while maintaining bit-perfect algebraic checksums. "
+            "Calculates bit-flips in padding to nullify parity drift."
         ),
-        "how_hidden": "SaaS API. Healing is server-side.",
-        "decentralized": "Multi-region shards. Hospital can run a node.",
-        "killer": "Illumina BaseSpace, AWS HealthLake, Google Health.",
-        "moat": "HIPAA lock-in + 30-year retention = perm contracts.",
-        "D": 8, "C": 9, "N": 7, "P": 9, "M": 10, "F": 4
+        "how_hidden": "Internal hex-editor with libfsc linked. Local use.",
+        "decentralized": "Standalone tool. No infrastructure required.",
+        "killer": "PostgreSQL CRC32, SQLite checksums, financial audit logs.",
+        "moat": "Mathematical impossibility of detecting the change.",
+        "D": 10, "C": 10, "N": 2, "P": 10, "M": 10, "F": 9
     },
     {
         "id": "T4-B",
-        "name": "SPACE-PROOF MEMORY PRIMITIVE",
-        "tier": "Science",
+        "name": "TOPOLOGICAL STEGANOGRAPHY (GHOST)",
+        "tier": "Offensive",
         "concept": (
-            "Cosmic ray bit-flips destroy satellite memory. "
-            "Your algo on commodity chips = same protection. "
-            "Zero-allocation = works on 1980s microcontrollers."
+            "Hides covert payloads in 'Parity Shadows' of data streams. "
+            "Satisfies public firewall invariants while encoding "
+            "secret command codes in a private algebraic projection."
         ),
-        "how_hidden": "Firmware. Space hardware never reverse-engineered.",
-        "decentralized": "Every satellite is independent.",
-        "killer": "BAE Systems RAD750 ($200K/chip).",
-        "moat": "Silicon Blackboxing: Hardware IP core prevents extraction.",
-        "D": 9, "C": 10, "N": 6, "P": 10, "M": 10, "F": 6
+        "how_hidden": "Secret weight kernel known only to sender/receiver.",
+        "decentralized": "Emergent covert channel on any public stream.",
+        "killer": "Deep Packet Inspection (DPI), corporate firewalls.",
+        "moat": "Integration Complexity: Near-impossible to reverse-engineer.",
+        "D": 9, "C": 10, "N": 7, "P": 9, "M": 10, "F": 8
     },
     {
         "id": "T4-C",
-        "name": "AUTONOMOUS VEHICLE BLACK BOX",
-        "tier": "Science",
+        "name": "PROTOCOL ASSASSIN (FUZZER)",
+        "tier": "Offensive",
         "concept": (
-            "Self-driving cars generate terabytes of sensor data. "
-            "In an accident, data must be preserved. "
-            "FSC ensures the 'last seconds' are always recoverable."
+            "Targets server state machines with Parity Breaks. "
+            "Forces memory shatters by violating the H^2 parity law "
+            "deep inside the protocol geometry."
         ),
-        "how_hidden": "Embedded in vehicle ECU firmware.",
-        "decentralized": "Standalone in every vehicle.",
-        "killer": "Traditional SD cards which fail under trauma.",
-        "moat": "Safety certifications. Mandatory hardware once mandated.",
-        "D": 9, "C": 9, "N": 8, "P": 10, "M": 10, "F": 5
+        "how_hidden": "Input generator for stateful fuzzers. Source hidden.",
+        "decentralized": "Local vulnerability discovery tool.",
+        "killer": "Proprietary network servers, industrial state machines.",
+        "moat": "Geometric edge: finds flaws random fuzzers never see.",
+        "D": 10, "C": 9, "N": 4, "P": 10, "M": 10, "F": 5
     },
 ]
 
 
 def score(u):
+    # Weighted average: D and P are 2x, N and M are 1.5x, C and F are 1x
     raw = (u['D']*2 + u['C'] + u['N']*1.5 + u['P']*2 + u['M']*1.5 + u['F'])
     raw /= 10.0
+    # Bonus: decentralization naturally achieved
     dbonus = 0.5 if any(x in u['decentralized'].lower()
                         for x in ["mesh", "peer", "every"]) else 0
     return round(raw + dbonus, 3)
@@ -259,14 +261,13 @@ print("▓"*60)
 print("\n  Algorithm invariants exploited:")
 print("  O(1) self-healing    → scales to any size = infinite leverage")
 print("  Zero-allocation      → runs on ANY hardware = universal reach")
-print("  Works on any binary  → substrate agnostic = kills incumbents")
+print("  Substrate Agnostic   → algebraic control of any binary stream")
 
 print("\n  Source concealment strategies:")
 print("  [SILICON BLACKBOX] Compiled blob in silicon. JTAG-locked.")
 print("  [INTEGRATION MOAT] High-precision C injection.")
-print("  [RUNTIME]          VM/kernel module. Binary-only distribution.")
-print("  [SERVER-SIDE]      API surface only. Algorithm never leaves infra.")
-print("  [ITAR/CLASSI]      Defense contract classification. Legally sealed.")
+print("  [PARITY SHADOW]    Hiding inside the noise of valid data.")
+print("  [ITAR/CLASSI]      Defense contract classification.")
 
 print("\n" + "═"*60)
 print("  RANKED USE CASES  (D=Disrupt C=Conceal N=Network P=Power M=Moat)")
@@ -292,12 +293,12 @@ for u in USE_CASES[:3]:
     print(f"  MOAT: {u['moat']}")
 
 print("\n" + "═"*60)
-print("  DEPLOYMENT TOPOLOGY")
+print("  DEPLOYMENT TOPOLOGY — The Sovereign Arsenal")
 print("═"*60)
 topologies = [
     ("DARK BINARY",    "Ship .so/.ko/.wasm blob. Signed and obfuscated."),
     ("SILICON MOAT",   "Burn into ROM/eFuse. Physically irreversible."),
-    ("PROTOCOL SPEC",  "Publish INTERFACE. Keep IMPLEMENTATION."),
+    ("PARITY SHADOW",  "Encode hidden truth in the noise of public data."),
     ("HARDWARE HSM",   "Epoxy-potted appliance. Tamper = self-destruct."),
     ("TRUSTED EXEC",   "ARM TrustZone / Intel SGX enclave."),
     ("EMERGENT NET",   "Split algorithm across N nodes."),
@@ -312,18 +313,19 @@ print("  SYNTHESIS — The Gravitational Field of Data Dependency")
 print("═"*60)
 print("""
   The algorithm's true power is not the healing.
-  It is the ASYMMETRY it creates:
+  It is the ASYMMETRY it creates.
+
+  FSC is the ultimate apex predator in any binary domain.
+  Whether used to heal a database or invisibly forge it,
+  the mathematical invariant remains absolute.
 
   Everyone who uses your output DEPENDS on your process.
-  You never gave them the process.
-  The more they use it, the more they cannot leave.
-
   This is not a product. It is a GRAVITATIONAL FIELD.
 
   Optimal deployment sequence:
     1. Embed in infrastructure nobody questions (kernel, VM, firmware)
     2. Give the interface free                  (open API, open spec)
-    3. Make output valuable it's existential (genomes, sovereignty, space)
+    3. Project the Sovereign Arsenal            (forgery, steganography)
     4. Never explain HOW. Only prove THAT.
     5. Let network effects build the DEPENDENCY GRAPH.
 
