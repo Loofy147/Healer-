@@ -59,8 +59,9 @@ class FSCPageReader:
         iters = 0
 
         # Performance: Cache row status to avoid redundant O(N*M) verifications
-        row_status = [self.reader._verify_record(i, self.data_records[i])
-                      for i in range(len(self.data_records))]
+        # Optimization: Use bulk vectorized verification for initial status cache
+        all_status = self.reader.verify_all_records()
+        row_status = all_status[:-1].tolist() # Exclude the vertical parity record
 
         while changed and iters < max_iters:
             changed = False

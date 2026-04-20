@@ -85,17 +85,25 @@ class FSCWriter:
         full_recs = np.zeros((n_recs, na), dtype=np.int64)
         full_recs[:, :nd] = source_np[:, :nd]
 
+        # Optimization: Group constraints by modulus for vectorized batch calculation
+        from collections import defaultdict
+        groups = defaultdict(list)
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
-                if is_native_available() and all(f.ftype == 'UINT8' for f in self.schema.data_fields):
-                     # Optimized path for UINT8 data blocks using native libfsc
-                     for i in range(n_recs):
-                         full_recs[i, c.stored_field_idx] = native_calculate_sum8(source_np[i, :nd].astype(np.uint8), c.weights.astype(np.int32), c.modulus or 0)
-                else:
-                    vals = (source_np[:, :nd] @ c.weights)
-                    if c.modulus:
-                        vals %= c.modulus
-                    full_recs[:, c.stored_field_idx] = vals
+                groups[c.modulus].append(c)
+
+        for modulus, c_list in groups.items():
+            if not c_list: continue
+
+            # Optimization: Use O(N*C) matrix multiplication to calculate stored invariants for all records at once
+            weights_batch = np.array([c.weights for c in c_list], dtype=np.int64)
+            # Resulting shape: (n_recs, len(c_list))
+            vals = source_np[:, :nd] @ weights_batch.T
+            if modulus:
+                vals %= modulus
+
+            for i, c in enumerate(c_list):
+                full_recs[:, c.stored_field_idx] = vals[:, i]
 
         self._record_list.extend(full_recs)
 
@@ -395,6 +403,41 @@ class FSCReader:
                                     fsc_audit_log("RECOVERY_BLIND_MOD", ci, mag)
                                 return True
         return False
+
+    def verify_all_records(self) -> np.ndarray:
+        """Vectorized bulk verification of all records in the file."""
+        if not self.constraints or len(self.records) == 0:
+            return np.ones(len(self.records), dtype=bool)
+
+        data_matrix = self.records[:, :len(self.data_fields)]
+        # Calculate all targets for all records
+        # self._is_fiber shape: (nc,)
+        # self.records shape: (nr, na)
+        record_indices = np.arange(len(self.records)).reshape(-1, 1)
+        fiber_mod = np.where(self._moduli != 0, self._moduli, 251)
+
+        # Broadcast fiber targets: (nr, 1) % (nc,) -> (nr, nc)
+        fiber_targets = record_indices % fiber_mod
+
+        # Broadcast fixed targets: (nc,)
+        fixed_targets = self._fixed_targets
+
+        # Stored targets: (nr, nc)
+        stored_targets = self.records[:, self._stored_indices]
+
+        targets = np.where(self._is_fiber, fiber_targets,
+                           np.where(self._has_fixed_target, fixed_targets, stored_targets))
+
+        # Actuals: (nr, nd) @ (nd, nc) -> (nr, nc)
+        actuals = data_matrix @ self._weight_matrix.T
+
+        # Apply moduli record-wise
+        for mod_val in np.unique(self._moduli):
+            if mod_val == 0: continue
+            mask = (self._moduli == mod_val)
+            actuals[:, mask] %= mod_val
+
+        return np.all(actuals == targets, axis=1)
 
     def get_data(self) -> List[List[int]]:
         return self.records[:, :len(self.data_fields)].tolist()
