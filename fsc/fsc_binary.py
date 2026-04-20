@@ -6,6 +6,7 @@ import numpy as np
 import struct
 import io
 from typing import List, Any, Optional
+from collections import defaultdict
 from itertools import combinations
 from fsc.fsc_framework import solve_linear_system
 from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_multi64
@@ -75,36 +76,18 @@ class FSCWriter:
 
     def add_records(self, data: Any):
         source_np = np.array(data, dtype=np.int64)
-        if len(source_np.shape) == 1:
-            source_np = source_np.reshape(1, -1)
-
-        nd = len(self.schema.data_fields)
-        na = len(self.schema.all_fields)
-        n_recs = source_np.shape[0]
-
-        full_recs = np.zeros((n_recs, na), dtype=np.int64)
-        full_recs[:, :nd] = source_np[:, :nd]
-
-        # Optimization: Group constraints by modulus for vectorized batch calculation
-        from collections import defaultdict
+        if len(source_np.shape) == 1: source_np = source_np.reshape(1, -1)
+        nd = len(self.schema.data_fields); na = len(self.schema.all_fields); n_recs = source_np.shape[0]
+        full_recs = np.zeros((n_recs, na), dtype=np.int64); full_recs[:, :nd] = source_np[:, :nd]
         groups = defaultdict(list)
         for c in self.schema.constraints:
-            if not c.is_fiber and c.target is None:
-                groups[c.modulus].append(c)
-
+            if not c.is_fiber and c.target is None: groups[c.modulus].append(c)
         for modulus, c_list in groups.items():
             if not c_list: continue
-
-            # Optimization: Use O(N*C) matrix multiplication to calculate stored invariants for all records at once
             weights_batch = np.array([c.weights for c in c_list], dtype=np.int64)
-            # Resulting shape: (n_recs, len(c_list))
             vals = source_np[:, :nd] @ weights_batch.T
-            if modulus:
-                vals %= modulus
-
-            for i, c in enumerate(c_list):
-                full_recs[:, c.stored_field_idx] = vals[:, i]
-
+            if modulus: vals %= modulus
+            for i, c in enumerate(c_list): full_recs[:, c.stored_field_idx] = vals[:, i]
         self._record_list.extend(full_recs)
 
     def write(self, filename: str):
@@ -225,57 +208,102 @@ class FSCReader:
 
     def _verify_record(self, record_idx: int, data_np: np.ndarray) -> bool:
         record = self.records[record_idx]
-        # Vectorized target calculation
-        targets = np.where(self._is_fiber,
-                           record_idx % np.where(self._moduli != 0, self._moduli, 251),
-                           np.where(self._has_fixed_target,
-                                    self._fixed_targets,
-                                    record[self._stored_indices]))
-        # Vectorized dot product for all constraints
-        # Optimization: Use NumPy matrix-vector multiplication for O(C*D) verification
-        # C = num constraints, D = num data fields. Significantly faster than Python loops.
-        actuals = self._weight_matrix @ data_np
-        mod_mask = self._moduli != 0
-        actuals[mod_mask] %= self._moduli[mod_mask]
+        targets = np.where(self._is_fiber, record_idx % np.where(self._moduli != 0, self._moduli, 251),
+                           np.where(self._has_fixed_target, self._fixed_targets, record[self._stored_indices]))
+        actuals = self._weight_matrix @ data_np; mod_mask = self._moduli != 0; actuals[mod_mask] %= self._moduli[mod_mask]
         return np.all(actuals == targets)
 
-    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1,
-                        corrupted_indices: List[int] = None) -> bool:
-        record = self.records[record_idx]
-        data_np = record[:len(self.data_fields)]
-
-        # Vectorized verification and syndrome calculation
-        targets = np.where(self._is_fiber,
-                           record_idx % np.where(self._moduli != 0, self._moduli, 251),
-                           np.where(self._has_fixed_target,
-                                    self._fixed_targets,
-                                    record[self._stored_indices]))
-        # Optimization: Use NumPy matrix-vector multiplication for O(C*D) verification
-        # C = num constraints, D = num data fields. Significantly faster than Python loops.
-        actuals = self._weight_matrix @ data_np
-        mod_mask = self._moduli != 0
-        actuals[mod_mask] %= self._moduli[mod_mask]
-
+    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> bool:
+        record = self.records[record_idx]; data_np = record[:len(self.data_fields)]
+        targets = np.where(self._is_fiber, record_idx % np.where(self._moduli != 0, self._moduli, 251), np.where(self._has_fixed_target, self._fixed_targets, record[self._stored_indices]))
+        actuals = self._weight_matrix @ data_np; mod_mask = self._moduli != 0; actuals[mod_mask] %= self._moduli[mod_mask]
         failed_mask = (actuals != targets)
-        if not np.any(failed_mask):
-            return True
-
-        diffs = (targets - actuals)
-        diffs[mod_mask] %= self._moduli[mod_mask]
-
-        failed = np.where(failed_mask)[0].tolist()
-        passed = np.where(~failed_mask)[0].tolist()
+        if not np.any(failed_mask): return True
+        diffs = (targets - actuals); diffs[mod_mask] %= self._moduli[mod_mask]
+        failed = np.where(failed_mask)[0].tolist(); passed = np.where(~failed_mask)[0].tolist()
         syndromes = {i: diffs[i] for i in failed}
 
-        c_idx = corrupted_field_idx
-        er_idx = set([c_idx] if c_idx != -1 else [])
-        if corrupted_indices:
-            er_idx.update(corrupted_indices)
+        c_idx = corrupted_field_idx; er_idx = set([c_idx] if c_idx != -1 else [])
+        if corrupted_indices: er_idx.update(corrupted_indices)
         er_indices = sorted(list(er_idx))
         if er_indices:
             t = len(er_indices)
-            if len(failed) < t:
-                return False
+            if len(failed) < t: return False
+            for c_subset in combinations(failed, t):
+                p = self.constraints[c_subset[0]].modulus
+                if not p:
+                    A = self._weight_matrix[list(c_subset)][:, er_indices]; b = [syndromes[i] for i in c_subset]
+                    try:
+                        sol = np.linalg.solve(A, np.array(b))
+                        for idx, ci in enumerate(er_indices): mag = int(round(sol[idx])); self.records[record_idx, ci] = int(data_np[ci] + mag); fsc_audit_log("RECOVERY_KNOWN", ci, mag)
+                        return True
+                    except Exception: continue
+                A = self._weight_matrix[list(c_subset)][:, er_indices] % p; b = [syndromes[i] % p for i in c_subset]
+                sol = solve_linear_system(A, b, p)
+                if sol:
+                    for idx, ci in enumerate(er_indices): mag = int(sol[idx]); self.records[record_idx, ci] = (int(data_np[ci]) + mag) % p; fsc_audit_log("RECOVERY_KNOWN_MOD", ci, mag)
+                    return True
+            return False
+        if passed:
+            passed_weights = self._weight_matrix[passed]; is_possible = np.all(passed_weights == 0, axis=0); t1_candidates = np.where(is_possible)[0].tolist()
+        else: t1_candidates = list(range(len(self.data_fields)))
+        for t in range(1, len(failed) + 1):
+            if t == 1:
+                cand_indices = np.array(t1_candidates)
+                if len(cand_indices) > 0 and len(failed) > 0:
+                    i1 = failed[0]; p1 = self.constraints[i1].modulus; s1 = syndromes[i1]; w1 = self._weight_matrix[i1, cand_indices]
+                    if p1:
+                        w1_mod = w1 % p1; nonzero = (w1_mod != 0)
+                        if np.any(nonzero):
+                            cands = cand_indices[nonzero]; w_subset = w1_mod[nonzero]; is_valid = np.ones(len(cands), dtype=bool)
+                            for i_other in failed[1:]:
+                                s_other = syndromes[i_other]; w_other = self._weight_matrix[i_other, cands]
+                                if self.constraints[i_other].modulus == p1:
+                                    is_valid &= ((s1 * w_other) % p1 == (s_other * w_subset) % p1)
+                                else: is_valid[:] = False; break
+                            if np.any(is_valid):
+                                ci = cands[np.argmax(is_valid)]
+                                try:
+                                    mag = (s1 * pow(int(self._weight_matrix[i1, ci] % p1), -1, p1)) % p1
+                                    self.records[record_idx, ci] = (int(data_np[ci]) + mag) % p1
+                                    fsc_audit_log("RECOVERY_BLIND_MOD_VEC", ci, mag)
+                                    return True
+                                except ValueError: pass
+                    else:
+                        nonzero = (w1 != 0)
+                        if np.any(nonzero):
+                            cands = cand_indices[nonzero]; w_subset = w1[nonzero]; is_valid = (s1 % w_subset == 0)
+                            if np.any(is_valid):
+                                cands = cands[is_valid]; w_sub2 = w_subset[is_valid]
+                                for i_other in failed[1:]:
+                                    s_other = syndromes[i_other]; w_other = self._weight_matrix[i_other, cands]
+                                    is_valid &= (s1 * w_other == s_other * w_sub2)
+                                if np.any(is_valid):
+                                    ci = cands[np.argmax(is_valid)]; mag = s1 // int(self._weight_matrix[i1, ci])
+                                    self.records[record_idx, ci] = int(data_np[ci] + mag); fsc_audit_log("RECOVERY_BLIND_VEC", ci, mag); return True
+                continue
+            search_space = range(len(self.data_fields))
+            for combo in combinations(search_space, t):
+                for c_subset in combinations(failed, t):
+                    p = self.constraints[c_subset[0]].modulus
+                    if not p:
+                        A = self._weight_matrix[list(c_subset)][:, list(combo)]; b = [syndromes[i] for i in c_subset]
+                        try:
+                            sol = np.linalg.solve(A, np.array(b)); test_v = data_np.copy()
+                            for idx, ci in enumerate(combo): test_v[ci] = int(data_np[ci] + round(sol[idx]))
+                            if self._verify_record(record_idx, test_v):
+                                for idx, ci in enumerate(combo): mag = int(round(sol[idx])); self.records[record_idx, ci] = test_v[ci]; fsc_audit_log("RECOVERY_BLIND", ci, mag)
+                                return True
+                        except Exception: continue
+                    else:
+                        A = self._weight_matrix[list(c_subset)][:, list(combo)] % p; b = [syndromes[i] % p for i in c_subset]
+                        sol = solve_linear_system(A, b, p)
+                        if sol:
+                            test_v = data_np.copy()
+                            for idx, ci in enumerate(combo): test_v[ci] = (int(data_np[ci]) + sol[idx]) % p
+                            if self._verify_record(record_idx, test_v):
+                                for idx, ci in enumerate(combo): mag = int(sol[idx]); self.records[record_idx, ci] = test_v[ci]; fsc_audit_log("RECOVERY_BLIND_MOD", ci, mag)
+                                return True
 
             # ATTEMPT NATIVE MULTI-FAULT ACCELERATION (k=2)
             if is_native_available() and t >= 1 and len(failed) >= t:
@@ -343,30 +371,40 @@ class FSCReader:
                 t1_candidates.append(i)
 
         for t in range(1, len(failed) + 1):
-            search_space = t1_candidates if t == 1 else range(len(self.data_fields))
-            for combo in combinations(search_space, t):
-                if t == 1 and len(failed) >= 2:
-                    ci = combo[0]
-                    match = True
-                    i1 = failed[0]
-                    c1 = self.constraints[i1]
-                    s1 = syndromes[i1]
-                    w1 = int(c1.weights[ci])
-                    p1 = c1.modulus
-                    for i2 in failed[1:]:
-                        c2 = self.constraints[i2]
-                        s2 = syndromes[i2]
-                        w2 = int(c2.weights[ci])
-                        p2 = c2.modulus
-                        if p1 == p2 and p1 is not None:
-                            if (s1 * w2) % p1 != (s2 * w1) % p1:
-                                match = False
-                                break
-                        elif p1 is None and p2 is None:
-                            if s1 * w2 != s2 * w1:
-                                match = False
-                                break
-                    if not match: continue
+            if t == 1:
+                cand_indices = np.array(t1_candidates)
+                if len(cand_indices) > 0 and len(failed) > 0:
+                    i1 = failed[0]; p1 = self.constraints[i1].modulus; s1 = syndromes[i1]; w1 = self._weight_matrix[i1, cand_indices]
+                    if p1:
+                        w1_mod = w1 % p1; nonzero = (w1_mod != 0)
+                        if np.any(nonzero):
+                            cands = cand_indices[nonzero]; w_subset = w1_mod[nonzero]; is_valid = np.ones(len(cands), dtype=bool)
+                            for i_other in failed[1:]:
+                                s_other = syndromes[i_other]; w_other = self._weight_matrix[i_other, cands]
+                                if self.constraints[i_other].modulus == p1:
+                                    is_valid &= ((s1 * w_other) % p1 == (s_other * w_subset) % p1)
+                                else: is_valid[:] = False; break
+                            if np.any(is_valid):
+                                ci = cands[np.argmax(is_valid)]
+                                try:
+                                    mag = (s1 * pow(int(self._weight_matrix[i1, ci] % p1), -1, p1)) % p1
+                                    self.records[record_idx, ci] = (int(data_np[ci]) + mag) % p1
+                                    fsc_audit_log("RECOVERY_BLIND_MOD_VEC", ci, mag)
+                                    return True
+                                except ValueError: pass
+                    else:
+                        nonzero = (w1 != 0)
+                        if np.any(nonzero):
+                            cands = cand_indices[nonzero]; w_subset = w1[nonzero]; is_valid = (s1 % w_subset == 0)
+                            if np.any(is_valid):
+                                cands = cands[is_valid]; w_sub2 = w_subset[is_valid]
+                                for i_other in failed[1:]:
+                                    s_other = syndromes[i_other]; w_other = self._weight_matrix[i_other, cands]
+                                    is_valid &= (s1 * w_other == s_other * w_sub2)
+                                if np.any(is_valid):
+                                    ci = cands[np.argmax(is_valid)]; mag = s1 // int(self._weight_matrix[i1, ci])
+                                    self.records[record_idx, ci] = int(data_np[ci] + mag); fsc_audit_log("RECOVERY_BLIND_VEC", ci, mag); return True
+                continue
 
                 for c_subset in combinations(failed, t):
                     p = self.constraints[c_subset[0]].modulus
@@ -405,38 +443,16 @@ class FSCReader:
         return False
 
     def verify_all_records(self) -> np.ndarray:
-        """Vectorized bulk verification of all records in the file."""
-        if not self.constraints or len(self.records) == 0:
-            return np.ones(len(self.records), dtype=bool)
-
+        if not self.constraints or len(self.records) == 0: return np.ones(len(self.records), dtype=bool)
         data_matrix = self.records[:, :len(self.data_fields)]
-        # Calculate all targets for all records
-        # self._is_fiber shape: (nc,)
-        # self.records shape: (nr, na)
         record_indices = np.arange(len(self.records)).reshape(-1, 1)
         fiber_mod = np.where(self._moduli != 0, self._moduli, 251)
-
-        # Broadcast fiber targets: (nr, 1) % (nc,) -> (nr, nc)
-        fiber_targets = record_indices % fiber_mod
-
-        # Broadcast fixed targets: (nc,)
-        fixed_targets = self._fixed_targets
-
-        # Stored targets: (nr, nc)
-        stored_targets = self.records[:, self._stored_indices]
-
-        targets = np.where(self._is_fiber, fiber_targets,
-                           np.where(self._has_fixed_target, fixed_targets, stored_targets))
-
-        # Actuals: (nr, nd) @ (nd, nc) -> (nr, nc)
+        fiber_targets = record_indices % fiber_mod; fixed_targets = self._fixed_targets; stored_targets = self.records[:, self._stored_indices]
+        targets = np.where(self._is_fiber, fiber_targets, np.where(self._has_fixed_target, fixed_targets, stored_targets))
         actuals = data_matrix @ self._weight_matrix.T
-
-        # Apply moduli record-wise
         for mod_val in np.unique(self._moduli):
             if mod_val == 0: continue
-            mask = (self._moduli == mod_val)
-            actuals[:, mask] %= mod_val
-
+            mask = (self._moduli == mod_val); actuals[:, mask] %= mod_val
         return np.all(actuals == targets, axis=1)
 
     def get_data(self) -> List[List[int]]:
