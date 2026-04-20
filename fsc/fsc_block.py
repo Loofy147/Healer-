@@ -25,6 +25,8 @@ class FSCBlock:
         self.m = m
         self.data_len = size - 3
         self.data = np.zeros(size, dtype=np.uint8)
+        self.w = np.arange(1, size + 1, dtype=np.int64)
+        self.w2 = self.w ** 2
 
     def write(self, payload: bytes):
         """Write data and compute 3 internal invariants."""
@@ -38,8 +40,8 @@ class FSCBlock:
 
         d = self.data[:self.data_len].astype(np.int64)
         s_d = int(np.sum(d) % self.m)
-        sw_d = int(np.dot(d, np.arange(1, self.data_len + 1, dtype=np.int64)) % self.m)
-        sw2_d = int(np.dot(d, np.arange(1, self.data_len + 1, dtype=np.int64)**2) % self.m)
+        sw_d = int(np.dot(d, self.w[:self.data_len]) % self.m)
+        sw2_d = int(np.dot(d, self.w2[:self.data_len]) % self.m)
 
         n1, n2, n3 = self.size - 2, self.size - 1, self.size
         A = [
@@ -59,34 +61,53 @@ class FSCBlock:
 
     def verify(self) -> bool:
         d = self.data.astype(np.int64)
-        weights = np.arange(1, self.size + 1, dtype=np.int64)
         s1 = int(np.sum(d) % self.m)
-        s2 = int(np.dot(d, weights) % self.m)
-        s3 = int(np.dot(d, weights**2) % self.m)
+        s2 = int(np.dot(d, self.w) % self.m)
+        s3 = int(np.dot(d, self.w2) % self.m)
 
         return (s1 == self.block_id % self.m and
                 s2 == (self.block_id * 7) % self.m and
                 s3 == (self.block_id * 13) % self.m)
 
     def heal(self) -> bool:
-        if self.verify(): return True
+        # O(1) Algebraic Localization (Model 5)
         n = self.size
         m = self.m
-        t1, t2, t3 = self.block_id % m, (self.block_id * 7) % m, (self.block_id * 13) % m
         d = self.data.astype(np.int64)
         s1 = int(np.sum(d) % m)
-        weights = np.arange(1, n + 1, dtype=np.int64)
-        s2 = int(np.dot(d, weights) % m)
-        s3 = int(np.dot(d, weights**2) % m)
+        s2 = int(np.dot(d, self.w) % m)
+        s3 = int(np.dot(d, self.w2) % m)
 
-        for i in range(n):
-            val = int(self.data[i])
-            w = i + 1
-            cand = (t1 - s1 + val) % m
-            if (s2 - w*val + w*cand) % m == t2 and (s3 - w**2*val + w**2*cand) % m == t3:
-                self.data[i] = cand
-                return True
-        return False
+        t1, t2, t3 = self.block_id % m, (self.block_id * 7) % m, (self.block_id * 13) % m
+        if s1 == t1 and s2 == t2 and s3 == t3:
+            return True
+
+        syn1 = (s1 - t1) % m
+        syn2 = (s2 - t2) % m
+        syn3 = (s3 - t3) % m
+
+        if syn1 == 0:
+            # If syn1 is 0 but syn2/syn3 are not, it's not a single corruption
+            # or it's a corruption in a way that preserves the sum but not the weighted sum.
+            return False
+
+        # i + 1 = syn2 / syn1
+        try:
+            w = (syn2 * pow(syn1, -1, m)) % m
+            if w == 0 or w > n:
+                return False
+
+            # Verify with third syndrome
+            if (w * syn2) % m != syn3:
+                return False
+
+            idx = int(w - 1)
+            val = int(self.data[idx])
+            self.data[idx] = (val - syn1) % 256
+            return True
+        except ValueError:
+            # No modular inverse
+            return False
 
 class FSCVolume:
     def __init__(self, n_blocks: int, block_size: int = 512):

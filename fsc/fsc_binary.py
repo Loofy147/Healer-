@@ -71,18 +71,29 @@ class FSCWriter:
         self._record_list = []
 
     def add_record(self, data: List[int]):
+        self.add_records([data])
+
+    def add_records(self, data: Any):
         source_np = np.array(data, dtype=np.int64)
+        if len(source_np.shape) == 1:
+            source_np = source_np.reshape(1, -1)
+
         nd = len(self.schema.data_fields)
         na = len(self.schema.all_fields)
-        full_rec = np.zeros(na, dtype=np.int64)
-        full_rec[:nd] = source_np[:nd]
+        n_recs = source_np.shape[0]
+
+        full_recs = np.zeros((n_recs, na), dtype=np.int64)
+        full_recs[:, :nd] = source_np[:, :nd]
+
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
-                val = (source_np[:nd] @ c.weights)
+                # Vectorized matrix-vector product for all records
+                vals = (source_np[:, :nd] @ c.weights)
                 if c.modulus:
-                    val %= c.modulus
-                full_rec[c.stored_field_idx] = val
-        self._record_list.append(full_rec)
+                    vals %= c.modulus
+                full_recs[:, c.stored_field_idx] = vals
+
+        self._record_list.extend(full_recs)
 
     def write(self, filename: str):
         records = np.array(self._record_list, dtype=np.int64)
@@ -106,9 +117,17 @@ class FSCWriter:
                 )
                 w_fmt = ">" + "b" * nd
                 f.write(struct.pack(w_fmt, *c.weights.tolist()))
-            s = struct.Struct(self.schema.record_fmt)
-            for rec in records:
-                f.write(s.pack(*rec))
+            # Optimization: Use numpy's view and tobytes to avoid looping with struct.pack
+            # Use structured dtype to handle mixed types efficiently
+            dtype_list = []
+            for f_info in self.schema.all_fields:
+                dtype_list.append((f_info.name, ">" + f_info.fmt))
+
+            structured_recs = np.zeros(len(records), dtype=dtype_list)
+            for i, f_info in enumerate(self.schema.all_fields):
+                structured_recs[f_info.name] = records[:, i]
+
+            f.write(structured_recs.tobytes())
 
 
 class FSCReader:
@@ -148,11 +167,19 @@ class FSCReader:
                 )
                 c.stored_field_idx = si
                 self.constraints.append(c)
-            fmt = ">" + "".join(f.fmt for f in self.all_fields)
-            s = struct.Struct(fmt)
-            recs = [s.unpack(f.read(s.size)) for _ in range(nr)]
-            if recs:
-                self.records = np.array(recs, dtype=np.int64)
+            dtype_list = []
+            for f_info in self.all_fields:
+                dtype_list.append((f_info.name, ">" + f_info.fmt))
+
+            if nr > 0:
+                dt = np.dtype(dtype_list)
+                raw_data = f.read(dt.itemsize * nr)
+                structured_recs = np.frombuffer(raw_data, dtype=dt)
+
+                # Convert back to int64 internal representation for healing logic
+                self.records = np.zeros((nr, len(self.all_fields)), dtype=np.int64)
+                for i, f_info in enumerate(self.all_fields):
+                    self.records[:, i] = structured_recs[f_info.name]
             else:
                 cols = len(self.all_fields)
                 self.records = np.empty((0, cols), dtype=np.int64)
