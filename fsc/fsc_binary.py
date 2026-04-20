@@ -1,12 +1,14 @@
 """
-FSC: Forward Sector Correction - Consolidated Implementation
+FSC: Forward Sector Correction - Hardened & Accelerated Implementation (v4)
 """
 
 import numpy as np
 import struct
+import io
 from typing import List, Any, Optional
 from itertools import combinations
 from fsc.fsc_framework import solve_linear_system
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_multi64
 
 FSC_COMMERCIAL_BUILD = False
 
@@ -85,22 +87,30 @@ class FSCWriter:
 
         for c in self.schema.constraints:
             if not c.is_fiber and c.target is None:
-                vals = (source_np[:, :nd] @ c.weights)
-                if c.modulus:
-                    vals %= c.modulus
-                full_recs[:, c.stored_field_idx] = vals
+                if is_native_available() and all(f.ftype == 'UINT8' for f in self.schema.data_fields):
+                     # Optimized path for UINT8 data blocks using native libfsc
+                     for i in range(n_recs):
+                         full_recs[i, c.stored_field_idx] = native_calculate_sum8(source_np[i, :nd].astype(np.uint8), c.weights.astype(np.int32), c.modulus or 0)
+                else:
+                    vals = (source_np[:, :nd] @ c.weights)
+                    if c.modulus:
+                        vals %= c.modulus
+                    full_recs[:, c.stored_field_idx] = vals
 
         self._record_list.extend(full_recs)
 
     def write(self, filename: str):
         records = np.array(self._record_list, dtype=np.int64)
         with open(filename, "wb") as f:
-            f.write(b"FSC1")
+            f.write(b"FSC4")
             nd = len(self.schema.data_fields)
             nc = len(self.schema.constraints)
             ns = len(self.schema.all_fields) - nd
             nr = len(records)
-            header = struct.pack(">B HB B I", 3, nd, nc, ns, nr)
+            meta = [nd, nc, ns, nr]
+            s1 = sum(meta) % (2**32)
+            s2 = sum((i+1)*v for i,v in enumerate(meta)) % (2**32)
+            header = struct.pack(">B HH B I II", 4, nd, nc, ns, nr, s1, s2)
             f.write(header)
             for field in self.schema.data_fields:
                 f.write(struct.pack(">16s", field.name.encode('ascii')))
@@ -114,15 +124,12 @@ class FSCWriter:
                 )
                 w_fmt = ">" + "b" * nd
                 f.write(struct.pack(w_fmt, *c.weights.tolist()))
-
             dtype_list = []
             for f_info in self.schema.all_fields:
                 dtype_list.append((f_info.name, ">" + f_info.fmt))
-
             structured_recs = np.zeros(len(records), dtype=dtype_list)
             for i, f_info in enumerate(self.schema.all_fields):
                 structured_recs[f_info.name] = records[:, i]
-
             f.write(structured_recs.tobytes())
 
 
@@ -136,10 +143,33 @@ class FSCReader:
 
     def _read_file(self):
         with open(self.filename, "rb") as f:
-            if f.read(4) != b"FSC1":
-                raise ValueError("Invalid magic")
-            header_data = f.read(9)
-            _, nd, nc, ns, nr = struct.unpack(">B HB B I", header_data)
+            magic = f.read(4)
+            if magic == b"FSC1":
+                header_data = f.read(9)
+                _, nd, nc, ns, nr = struct.unpack(">B HB B I", header_data)
+            elif magic == b"FSC4":
+                header_data = f.read(18)
+                ver, nd, nc, ns, nr, s1, s2 = struct.unpack(">B HH B I II", header_data)
+                meta = [nd, nc, ns, nr]
+                calc_s1 = sum(meta) % (2**32)
+                calc_s2 = sum((i+1)*v for i,v in enumerate(meta)) % (2**32)
+                if calc_s1 != s1 or calc_s2 != s2:
+                    fsc_audit_log("HEADER_CORRUPTION_DETECTED", 0, 0)
+                    healed = False
+                    for i in range(4):
+                        others = [v for j,v in enumerate(meta) if i != j]
+                        others_weighted = [(j+1)*v for j,v in enumerate(meta) if i != j]
+                        rec_v_s1 = (s1 - sum(others)) % (2**32)
+                        if ((i+1)*rec_v_s1 + sum(others_weighted)) % (2**32) == s2:
+                            meta[i] = rec_v_s1
+                            nd, nc, ns, nr = meta
+                            fsc_audit_log("HEADER_HEALED", i, rec_v_s1)
+                            healed = True
+                            break
+                    if not healed:
+                        raise ValueError("Critical Header Corruption: Unrecoverable")
+            else:
+                raise ValueError(f"Invalid magic: {magic}")
             ftypes = list(FSCField.TYPES.keys())
             for _ in range(nd):
                 name_bytes = struct.unpack(">16s", f.read(16))[0]
@@ -165,7 +195,6 @@ class FSCReader:
             dtype_list = []
             for f_info in self.all_fields:
                 dtype_list.append((f_info.name, ">" + f_info.fmt))
-
             if nr > 0:
                 dt = np.dtype(dtype_list)
                 raw_data = f.read(dt.itemsize * nr)
@@ -186,7 +215,6 @@ class FSCReader:
                 target = c.target
             else:
                 target = record[c.stored_field_idx]
-
             actual = int(np.dot(c.weights, data_np))
             if c.modulus:
                 actual %= c.modulus
@@ -230,6 +258,35 @@ class FSCReader:
             t = len(er_indices)
             if len(failed) < t:
                 return False
+
+            # ATTEMPT NATIVE MULTI-FAULT ACCELERATION (k=2)
+            if is_native_available() and t >= 1 and len(failed) >= t:
+                 # Check if all relevant constraints use same modulus
+                 p_set = {self.constraints[i].modulus for i in failed}
+                 if len(p_set) == 1 and list(p_set)[0] is not None:
+                     p = list(p_set)[0]
+                     targets = []
+                     for i in failed:
+                         if self.constraints[i].is_fiber:
+                             targets.append(record_idx % (self.constraints[i].modulus or 251))
+                         elif self.constraints[i].target is not None:
+                             targets.append(self.constraints[i].target)
+                         else:
+                             targets.append(record[self.constraints[i].stored_field_idx])
+
+                     all_weights = np.zeros((len(failed), len(self.data_fields)), dtype=np.int32)
+                     for i, f_idx in enumerate(failed):
+                         all_weights[i] = self.constraints[f_idx].weights.astype(np.int32)
+
+                     rec_data = data_np.astype(np.int64).copy()
+                     if native_heal_multi64(rec_data, all_weights.flatten(),
+                                            np.array(targets, dtype=np.int64),
+                                            np.array([p]*len(failed), dtype=np.int64),
+                                            er_indices):
+                         self.records[record_idx, :len(self.data_fields)] = rec_data
+                         fsc_audit_log("NATIVE_RECOVERY_KNOWN", 0, 0)
+                         return True
+
             for c_subset in combinations(failed, t):
                 p = self.constraints[c_subset[0]].modulus
                 if not p:
@@ -245,7 +302,6 @@ class FSCReader:
                         return True
                     except Exception:
                         continue
-
                 A = [[int(self.constraints[i].weights[ci]) % p
                       for ci in er_indices] for i in c_subset]
                 b = [syndromes[i] % p for i in c_subset]
@@ -258,8 +314,6 @@ class FSCReader:
                     return True
             return False
 
-        # Optimized Blind Corruption Recovery
-        # Strategy: Prune candidates using successful constraints
         t1_candidates = []
         for i in range(len(self.data_fields)):
             is_possible = True
@@ -273,7 +327,6 @@ class FSCReader:
         for t in range(1, len(failed) + 1):
             search_space = t1_candidates if t == 1 else range(len(self.data_fields))
             for combo in combinations(search_space, t):
-                # Optimization for t=1 with multiple failed constraints: Ratio check
                 if t == 1 and len(failed) >= 2:
                     ci = combo[0]
                     match = True
