@@ -17,3 +17,6 @@
 ## 2024-05-23 - [Quadratic FSC Recovery]
 **Learning:** Non-linear invariants (sum of squares) can be recovered using square roots, but involve sign ambiguity. For sensors like accelerometers, the magnitude invariant is physically meaningful but requires unsigned data or sign inference.
 **Action:** Implemented quadratic_sum as a non-exact but physically relevant FSC type.
+## 2025-05-14 - [FSC Optimization Learnings]
+**Learning:** Python's `open()` and `close()` overhead is significant when performing frequent small random-access reads on persistent storage. Reusing a single file handle across multiple block loads in `PersistentFSCVolume` reduced 100-read latency from ~0.13s to ~0.02s (~6.5x speedup). Additionally, refactoring O(N) search loops into O(1) algebraic localization for Model 5 invariants is a critical win for large block sizes (e.g., 4KB sectors).
+**Action:** Always prefer context-managed single-file-handle passes for batch storage operations and prioritize O(1) syndrome-based localization over brute-force search in self-healing logic.

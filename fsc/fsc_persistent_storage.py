@@ -36,7 +36,7 @@ class PersistentFSCVolume:
             with open(self.filename, "wb") as f:
                 f.write(b"\0" * self.total_size)
 
-    def _get_block(self, block_idx: int) -> FSCBlock:
+    def _get_block(self, block_idx: int, f_handle=None) -> FSCBlock:
         """Get a block, loading it into LRU cache if necessary."""
         if block_idx in self.cache:
             # Move to end (most recent)
@@ -46,9 +46,13 @@ class PersistentFSCVolume:
 
         # Load from disk
         block = self.volume.blocks[block_idx]
-        with open(self.filename, "rb") as f:
-            f.seek(block_idx * self.block_size)
-            block.data = np.frombuffer(f.read(self.block_size), dtype=np.uint8).copy()
+        if f_handle:
+            f_handle.seek(block_idx * self.block_size)
+            block.data = np.frombuffer(f_handle.read(self.block_size), dtype=np.uint8).copy()
+        else:
+            with open(self.filename, "rb") as f:
+                f.seek(block_idx * self.block_size)
+                block.data = np.frombuffer(f.read(self.block_size), dtype=np.uint8).copy()
 
         # Add to cache
         self.cache[block_idx] = block
@@ -68,36 +72,38 @@ class PersistentFSCVolume:
 
     def write(self, data: bytes):
         """Write data to volume, update parity, and sync all affected blocks."""
-        # To compute volume parity, we currently need all blocks.
-        # For 'production' we'd use incremental parity, but here we load all.
-        for i in range(self.n_blocks):
-            self._get_block(i)
-
+        # Optimization: We are overwriting the entire volume, so we don't need
+        # to load existing data from disk to compute parity.
         self.volume.write_volume(data)
 
-        # Sync all blocks (could be optimized to only sync changed ones)
+        # Batch sync all blocks to disk in a single pass
         with open(self.filename, "r+b") as f:
             for i in range(self.n_blocks):
+                block_data = self.volume.blocks[i].data.tobytes()
                 f.seek(i * self.block_size)
-                f.write(self.volume.blocks[i].data.tobytes())
+                f.write(block_data)
+                # Update cache if present
+                if i in self.cache:
+                    self.cache[i].data = np.frombuffer(block_data, dtype=np.uint8).copy()
 
     def heal_and_sync(self) -> int:
         """Heal corruptions in the volume and sync fixed data to disk."""
-        # Load all blocks for full volume healing
-        for i in range(self.n_blocks):
-            self._get_block(i)
+        # Load all blocks for full volume healing using a single file handle
+        with open(self.filename, "r+b") as f:
+            for i in range(self.n_blocks):
+                self._get_block(i, f_handle=f)
 
-        count = self.volume.heal_volume()
-        if count > 0:
-            with open(self.filename, "r+b") as f:
+            count = self.volume.heal_volume()
+            if count > 0:
                 for i in range(self.n_blocks):
                     f.seek(i * self.block_size)
                     f.write(self.volume.blocks[i].data.tobytes())
         return count
 
     def read(self) -> bytes:
-        for i in range(self.n_blocks):
-            self._get_block(i)
+        with open(self.filename, "rb") as f:
+            for i in range(self.n_blocks):
+                self._get_block(i, f_handle=f)
         return self.volume.read_volume()
 
     def corrupt_disk(self, block_idx: int, byte_offset: int, val: int):

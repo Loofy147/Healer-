@@ -32,7 +32,7 @@ def benchmark_syndrome_healing():
     filename = "bench.fsc"
     writer = FSCWriter(schema)
     records = np.random.randint(0, 250, (100, n_data))
-    writer.add_records(records)
+    for r in records: writer.add_record(r.tolist())
     writer.write(filename)
 
     reader = FSCReader(filename)
