@@ -40,3 +40,4 @@ done
 echo "===================================================="
 echo "   SUMMARY: $SUCCESS_COUNT / $TOTAL_COUNT PASSED"
 echo "===================================================="
+test $SUCCESS_COUNT -eq $TOTAL_COUNT
