@@ -206,48 +206,58 @@ class FSCReader:
                 cols = len(self.all_fields)
                 self.records = np.empty((0, cols), dtype=np.int64)
 
+            # Pre-compute verification metadata for vectorized performance
+            if self.constraints:
+                self._weight_matrix = np.array([c.weights for c in self.constraints], dtype=np.int64)
+                self._moduli = np.array([c.modulus if c.modulus is not None else 0 for c in self.constraints], dtype=np.int64)
+                self._fixed_targets = np.array([c.target if c.target is not None else 0 for c in self.constraints], dtype=np.int64)
+                self._has_fixed_target = np.array([c.target is not None for c in self.constraints], dtype=bool)
+                self._stored_indices = np.array([c.stored_field_idx for c in self.constraints], dtype=np.int64)
+                self._is_fiber = np.array([c.is_fiber for c in self.constraints], dtype=bool)
+
     def _verify_record(self, record_idx: int, data_np: np.ndarray) -> bool:
         record = self.records[record_idx]
-        for c in self.constraints:
-            if c.is_fiber:
-                target = record_idx % (c.modulus or 251)
-            elif c.target is not None:
-                target = c.target
-            else:
-                target = record[c.stored_field_idx]
-            actual = int(np.dot(c.weights, data_np))
-            if c.modulus:
-                actual %= c.modulus
-            if actual != target:
-                return False
-        return True
+        # Vectorized target calculation
+        targets = np.where(self._is_fiber,
+                           record_idx % np.where(self._moduli != 0, self._moduli, 251),
+                           np.where(self._has_fixed_target,
+                                    self._fixed_targets,
+                                    record[self._stored_indices]))
+        # Vectorized dot product for all constraints
+        # Optimization: Use NumPy matrix-vector multiplication for O(C*D) verification
+        # C = num constraints, D = num data fields. Significantly faster than Python loops.
+        actuals = self._weight_matrix @ data_np
+        mod_mask = self._moduli != 0
+        actuals[mod_mask] %= self._moduli[mod_mask]
+        return np.all(actuals == targets)
 
     def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1,
                         corrupted_indices: List[int] = None) -> bool:
         record = self.records[record_idx]
         data_np = record[:len(self.data_fields)]
-        failed, syndromes = [], {}
-        passed = []
-        for i, c in enumerate(self.constraints):
-            if c.is_fiber:
-                target = record_idx % (c.modulus or 251)
-            elif c.target is not None:
-                target = c.target
-            else:
-                target = record[c.stored_field_idx]
-            actual = int(np.dot(c.weights, data_np))
-            if c.modulus:
-                actual %= c.modulus
-            if actual != target:
-                failed.append(i)
-                if c.modulus:
-                    syndromes[i] = (target - actual) % c.modulus
-                else:
-                    syndromes[i] = (target - actual)
-            else:
-                passed.append(i)
-        if not failed:
+
+        # Vectorized verification and syndrome calculation
+        targets = np.where(self._is_fiber,
+                           record_idx % np.where(self._moduli != 0, self._moduli, 251),
+                           np.where(self._has_fixed_target,
+                                    self._fixed_targets,
+                                    record[self._stored_indices]))
+        # Optimization: Use NumPy matrix-vector multiplication for O(C*D) verification
+        # C = num constraints, D = num data fields. Significantly faster than Python loops.
+        actuals = self._weight_matrix @ data_np
+        mod_mask = self._moduli != 0
+        actuals[mod_mask] %= self._moduli[mod_mask]
+
+        failed_mask = (actuals != targets)
+        if not np.any(failed_mask):
             return True
+
+        diffs = (targets - actuals)
+        diffs[mod_mask] %= self._moduli[mod_mask]
+
+        failed = np.where(failed_mask)[0].tolist()
+        passed = np.where(~failed_mask)[0].tolist()
+        syndromes = {i: diffs[i] for i in failed}
 
         c_idx = corrupted_field_idx
         er_idx = set([c_idx] if c_idx != -1 else [])
