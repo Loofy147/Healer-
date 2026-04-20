@@ -23,3 +23,6 @@
 ## 2025-05-14 - [2D Page Healing Optimization]
 **Learning:** Iterative 2D healing algorithms (alternating row and column verifications) can suffer from redundant row verifications if not cached. By caching row status and only re-verifying modified rows, 2D healing throughput for 50x20 pages increased by ~3.3x (0.0053s -> 0.0016s).
 **Action:** Use status caching for iterative multi-dimensional reconciliation algorithms to avoid redundant O(N*M) checks in every sub-iteration.
+## 2025-05-14 - [Vectorized Binary I/O Optimization]
+**Learning:** Python's `struct.pack` and `struct.unpack` in loops are significant bottlenecks for binary data processing. By switching to numpy vectorized operations for invariant computation and structured numpy arrays for binary I/O, `FSCWriter` and `FSCReader` throughput improved dramatically. For 10,000 records, total write time dropped from ~0.73s to ~0.08s (~9x speedup).
+**Action:** Use numpy structured dtypes and `frombuffer`/`tobytes` for high-throughput binary file formats instead of individual record packing.
