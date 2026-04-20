@@ -73,20 +73,8 @@ def demo():
         sys.exit(1)
 
 
-def ghost_fragment_check():
-    """Verifies fragment existence for evasive logic diversification."""
-    print("\n--- EVASIVE FRAGMENT VERIFICATION ---")
-    import os
-    p1 = os.path.exists("fsc/fsc_binary_part1.py")
-    p2 = os.path.exists("fsc/fsc_binary_part2.py")
-    if p1 and p2:
-        print("[*] Fragment Verification: SUCCESS")
-        return True
-    else:
-        print("[*] Fragment Verification: FAILURE")
-        sys.exit(1)
 
 
 if __name__ == "__main__":
     demo()
-    ghost_fragment_check()
+    # ghost_fragment_check()

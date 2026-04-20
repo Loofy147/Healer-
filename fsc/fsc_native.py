@@ -1,0 +1,81 @@
+"""
+FSC: Forward Sector Correction - Native Acceleration Bridge
+"""
+
+import ctypes
+import os
+import numpy as np
+from typing import List, Optional
+
+# Load the shared library
+_LIB_PATH = os.path.join(os.getcwd(), "libfsc.so")
+_lib = None
+if os.path.exists(_LIB_PATH):
+    try:
+        _lib = ctypes.CDLL(_LIB_PATH)
+    except Exception as e:
+        print(f"[FSC-NATIVE] Warning: Failed to load libfsc.so: {e}")
+
+# Define argument and return types
+if _lib:
+    # int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus)
+    _lib.fsc_calculate_sum8.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.POINTER(ctypes.c_int32),
+        ctypes.c_size_t,
+        ctypes.c_int64
+    ]
+    _lib.fsc_calculate_sum8.restype = ctypes.c_int64
+
+    # uint8_t fsc_heal_single8(const uint8_t* data, const int32_t* weights, size_t n, int64_t target, int64_t modulus, size_t corrupted_idx)
+    _lib.fsc_heal_single8.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.POINTER(ctypes.c_int32),
+        ctypes.c_size_t,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_size_t
+    ]
+    _lib.fsc_heal_single8.restype = ctypes.c_uint8
+
+    # int fsc_heal_multi64(...)
+    _lib.fsc_heal_multi64.argtypes = [
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.POINTER(ctypes.c_int32),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t)
+    ]
+    _lib.fsc_heal_multi64.restype = ctypes.c_int
+
+def is_native_available() -> bool:
+    return _lib is not None
+
+def native_calculate_sum8(data: np.ndarray, weights: Optional[np.ndarray], modulus: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+
+    data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
+
+    return _lib.fsc_calculate_sum8(data_ptr, weights_ptr, len(data), modulus)
+
+def native_heal_multi64(data: np.ndarray, weights: Optional[np.ndarray],
+                       targets: np.ndarray, moduli: np.ndarray,
+                       corrupted_indices: List[int]) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+
+    data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))
+    weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
+    targets_ptr = targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))
+    moduli_ptr = moduli.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))
+
+    ci_array = (ctypes.c_size_t * len(corrupted_indices))(*corrupted_indices)
+
+    res = _lib.fsc_heal_multi64(data_ptr, weights_ptr, len(data),
+                                targets_ptr, moduli_ptr,
+                                len(corrupted_indices), ci_array)
+    if res == 1:
+        return True
+    return False

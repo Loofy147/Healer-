@@ -81,18 +81,8 @@ def gf_forge():
         sys.exit(1)
 
 
-def forge_via_fragments():
-    """Demonstrates component diversification by utilizing legacy fragments."""
-    print("\n--- ARCHIVAL COMPONENT DIVERSIFICATION ---")
-    try:
-        from fsc.fsc_binary_part1 import FSCSchema, FSCField, FSCWriter  # noqa
-        from fsc.fsc_binary_part2 import FSCReader  # noqa
-        print("[*] Successfully loaded implementation from fragments.")
-    except ImportError:
-        print("[✗] Fragments not found.")
-        sys.exit(1)
 
 
 if __name__ == "__main__":
     gf_forge()
-    forge_via_fragments()
+    # forge_via_fragments()

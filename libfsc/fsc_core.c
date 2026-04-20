@@ -269,3 +269,55 @@ void fsc_audit_log(const char* event_type, int index, int64_t magnitude) {
     (void)event_type; (void)index; (void)magnitude;
 #endif
 }
+
+int fsc_heal_multi8(uint8_t* restrict data, const int32_t* restrict weights, size_t n_data,
+                   const int64_t* restrict targets, const int64_t* restrict moduli,
+                   size_t k, const size_t* restrict corrupted_indices) {
+    if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
+    int64_t p = moduli[0];
+    __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
+
+    for (size_t i = 0; i < k; i++) {
+        __int128_t sum_others = 0;
+        for (size_t j = 0; j < n_data; j++) {
+            int is_corrupted = 0;
+            for (size_t ki = 0; ki < k; ki++) if (corrupted_indices[ki] == j) { is_corrupted = 1; break; }
+            if (is_corrupted) continue;
+            __int128_t v = data[j] % p;
+            __int128_t w = weights ? (int32_t)weights[i * n_data + j] % p : 1; if (w < 0) w += p;
+            sum_others = (sum_others + (v * w)) % p;
+        }
+        __int128_t rhs = (targets[i] - sum_others) % p;
+        if (rhs < 0) rhs += p;
+        M[i][k] = rhs;
+        for (size_t ki = 0; ki < k; ki++) {
+            __int128_t w = weights ? (int32_t)weights[i * n_data + corrupted_indices[ki]] % p : 1;
+            if (w < 0) w += p;
+            M[i][ki] = w;
+        }
+    }
+
+    for (size_t col = 0; col < k; col++) {
+        size_t pivot = col;
+        while (pivot < k && M[pivot][col] == 0) pivot++;
+        if (pivot == k) return FSC_ERR_SINGULAR;
+        if (pivot != col) {
+            for (size_t j = col; j <= k; j++) {
+                __int128_t tmp = M[col][j]; M[col][j] = M[pivot][j]; M[pivot][j] = tmp;
+            }
+        }
+        int64_t inv_piv = fsc_mod_inverse((int64_t)M[col][col], p);
+        for (size_t j = col; j <= k; j++) M[col][j] = (M[col][j] * inv_piv) % p;
+        for (size_t row = 0; row < k; row++) {
+            if (row != col && M[row][col] != 0) {
+                __int128_t factor = M[row][col];
+                for (size_t j = col; j <= k; j++) {
+                    M[row][j] = (M[row][j] - (factor * M[col][j]) % p) % p;
+                    if (M[row][j] < 0) M[row][j] += p;
+                }
+            }
+        }
+    }
+    for (size_t ki = 0; ki < k; ki++) data[corrupted_indices[ki]] = (uint8_t)(M[ki][k] % 256);
+    return FSC_SUCCESS;
+}
