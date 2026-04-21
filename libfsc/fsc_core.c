@@ -67,6 +67,7 @@ int64_t fsc_calculate_sum8(const uint8_t* restrict data, const int32_t* restrict
 
 uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict weights, size_t n,
                         int64_t target, int64_t modulus, size_t corrupted_idx) {
+    if (corrupted_idx >= n) return 0;
     int64_t sum_others = 0;
     if (weights) {
         for (size_t i = 0; i < n; i++) {
@@ -117,6 +118,7 @@ int64_t fsc_calculate_sum64(const int64_t* restrict data, const int32_t* restric
 
 int64_t fsc_heal_single64(const int64_t* restrict data, const int32_t* restrict weights, size_t n,
                          int64_t target, int64_t modulus, size_t corrupted_idx) {
+    if (corrupted_idx >= n) return 0;
     __int128_t sum_others = 0;
     if (weights) {
         for (size_t i = 0; i < n; i++) {
@@ -149,7 +151,11 @@ int fsc_heal_multi64(int64_t* restrict data, const int32_t* restrict weights, si
                     const int64_t* restrict targets, const int64_t* restrict moduli,
                     size_t k, const size_t* restrict corrupted_indices) {
     if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
+    for (size_t ki = 0; ki < k; ki++) {
+        if (corrupted_indices[ki] >= n_data) return FSC_ERR_BOUNDS;
+    }
     int64_t p = moduli[0];
+    if (p <= 0) return FSC_ERR_INVALID;
     __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
 
     for (size_t i = 0; i < k; i++) {
@@ -274,7 +280,11 @@ int fsc_heal_multi8(uint8_t* restrict data, const int32_t* restrict weights, siz
                    const int64_t* restrict targets, const int64_t* restrict moduli,
                    size_t k, const size_t* restrict corrupted_indices) {
     if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
+    for (size_t ki = 0; ki < k; ki++) {
+        if (corrupted_indices[ki] >= n_data) return FSC_ERR_BOUNDS;
+    }
     int64_t p = moduli[0];
+    if (p <= 0) return FSC_ERR_INVALID;
     __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
 
     for (size_t i = 0; i < k; i++) {

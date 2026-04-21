@@ -106,6 +106,7 @@ def native_calculate_sum8(data: np.ndarray, weights: Optional[np.ndarray], modul
     return _lib.fsc_calculate_sum8(data_ptr, weights_ptr, len(data), modulus)
 
 def native_heal_single8(data: np.ndarray, weights: Optional[np.ndarray], target: int, modulus: int, corrupted_idx: int) -> int:
+    if corrupted_idx >= len(data): return 0
     if not _lib: raise RuntimeError("Native library not loaded")
     data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
     weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
@@ -118,6 +119,7 @@ def native_calculate_sum64(data: np.ndarray, weights: Optional[np.ndarray], modu
     return _lib.fsc_calculate_sum64(data_ptr, weights_ptr, len(data), modulus)
 
 def native_heal_single64(data: np.ndarray, weights: Optional[np.ndarray], target: int, modulus: int, corrupted_idx: int) -> int:
+    if corrupted_idx >= len(data): return 0
     if not _lib: raise RuntimeError("Native library not loaded")
     data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))
     weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
@@ -126,6 +128,8 @@ def native_heal_single64(data: np.ndarray, weights: Optional[np.ndarray], target
 def native_heal_multi64(data: np.ndarray, weights: Optional[np.ndarray],
                        targets: np.ndarray, moduli: np.ndarray,
                        corrupted_indices: List[int]) -> bool:
+    if any(ci >= len(data) for ci in corrupted_indices): return False
+    if len(moduli) > 0 and moduli[0] <= 0: return False
     if not _lib: raise RuntimeError("Native library not loaded")
     data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))
     weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
@@ -140,6 +144,8 @@ def native_heal_multi64(data: np.ndarray, weights: Optional[np.ndarray],
 def native_heal_multi8(data: np.ndarray, weights: Optional[np.ndarray],
                       targets: np.ndarray, moduli: np.ndarray,
                       corrupted_indices: List[int]) -> bool:
+    if any(ci >= len(data) for ci in corrupted_indices): return False
+    if len(moduli) > 0 and moduli[0] <= 0: return False
     if not _lib: raise RuntimeError("Native library not loaded")
     data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
     weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
