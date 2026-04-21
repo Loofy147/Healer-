@@ -1,3 +1,4 @@
+from fsc.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.

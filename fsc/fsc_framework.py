@@ -234,6 +234,11 @@ class FSCAnalyzer:
         if np.all(xors == xors[0]):
             candidates.append({'type': 'constant_xor', 'value': int(xors[0]), 'strength': 'exact', 'overhead_bytes': 1})
 
+        # Check for non-linear relationships
+        quadratic = FSCAnalyzer.find_quadratic_relationship(data, group_size)
+        for rel in quadratic:
+            candidates.append({"type": "quadratic_relationship", "details": rel, "strength": "exact", "overhead_bytes": 0})
+
         # Check for linear relationships
         linear = FSCAnalyzer.find_linear_relationship(data, group_size)
         for rel in linear:
@@ -274,6 +279,35 @@ class FSCAnalyzer:
                                 'weights': {indep_indices[i]: int(weights[i]) for i in range(len(indep_indices))},
                                 'modulus': p
                             })
+        return relationships
+
+
+    @staticmethod
+    def find_quadratic_relationship(data: np.ndarray, group_size: int) -> list:
+        """
+        Detects if a field in the group is a sum-of-squares of others.
+        e.g. v[2] = sum(v[i]^2) % m
+        """
+        n_groups = len(data) // group_size
+        if n_groups == 0: return []
+        reshaped = data[:n_groups * group_size].reshape(n_groups, group_size).astype(np.int64)
+
+        relationships = []
+        for dep_idx in range(group_size):
+            indep_indices = [i for i in range(group_size) if i != dep_idx]
+            X = reshaped[:, indep_indices]
+            y = reshaped[:, dep_idx]
+
+            for m in [251, 65521, None]:
+                sum_sq = np.sum(X**2, axis=1)
+                if m: sum_sq %= m
+
+                if np.all(sum_sq == (y % m if m else y)):
+                    relationships.append({
+                        "dependent": dep_idx,
+                        "type": "sum_of_squares",
+                        "modulus": m
+                    })
         return relationships
 
 class FSCHealer:
