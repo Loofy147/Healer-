@@ -1,3 +1,4 @@
+from fsc.fsc_native import FSC_SUCCESS
 import sys
 import os
 import numpy as np

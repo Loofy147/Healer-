@@ -14,6 +14,7 @@ import os
 import numpy as np
 from typing import List, Optional, Dict
 from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_native import FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 class FSCPageWriter:
     def __init__(self, schema: FSCSchema, page_size: int = 10):
@@ -49,7 +50,7 @@ class FSCPageReader:
         self.parity_record = self.reader.records[-1, :self.n_data]
         self.mod = self.reader.constraints[0].modulus if self.reader.constraints else None
 
-    def verify_and_heal_2d(self) -> bool:
+    def verify_and_heal_2d(self) -> int:
         """
         Iterative 2D healing engine. Alternates between row-wise Model 5
         and column-wise sum invariants to resolve multi-erasure blocks.
@@ -70,7 +71,7 @@ class FSCPageReader:
             for i in range(len(self.data_records)):
                 if not row_status[i]:
                     old_row = self.data_records[i].copy()
-                    if self.reader.verify_and_heal(i):
+                    if self.reader.verify_and_heal(i) == FSC_SUCCESS:
                         if not np.array_equal(self.data_records[i], old_row):
                             changed = True
                             row_status[i] = True
@@ -104,7 +105,7 @@ class FSCPageReader:
                             dirty_row_indices = [i for i, ok in enumerate(row_status) if not ok]
                         changed = True
 
-        return all(row_status)
+        return FSC_SUCCESS if all(row_status) else FSC_ERR_INVALID
 
     def get_data(self) -> List[List[int]]:
         return self.data_records.tolist()

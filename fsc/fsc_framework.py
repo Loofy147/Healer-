@@ -179,12 +179,13 @@ def gf_inv(a, p):
 def solve_linear_system(A, b, p):
     """
     Gaussian elimination over GF(p).
-    Returns list of solutions or None if the system is singular or has no solution.
+    Returns list of solutions or None if the system is singular.
     """
     n = len(b)
     if n == 0: return []
 
-    # Augmented matrix M = [A | b]
+    # Use higher precision for intermediate sums if needed,
+    # but here we are in Python with arbitrary precision ints.
     M = []
     for i in range(n):
         row = [int(val) % p for val in A[i]]
@@ -192,32 +193,21 @@ def solve_linear_system(A, b, p):
         M.append(row)
 
     for col in range(n):
-        # Pivot selection: find a non-zero element in the current column
         pivot = -1
         for r in range(col, n):
             if M[r][col] % p != 0:
                 pivot = r
                 break
-
-        if pivot == -1:
-            # Column is all zeros, system is singular
-            return None
-
-        # Swap current row with pivot row
+        if pivot == -1: return None
         M[col], M[pivot] = M[pivot], M[col]
-
-        # Normalize the pivot row
         inv_piv = gf_inv(M[col][col], p)
         for j in range(col, n + 1):
             M[col][j] = (M[col][j] * inv_piv) % p
-
-        # Eliminate other entries in this column
         for row in range(n):
             if row != col and M[row][col] != 0:
                 factor = M[row][col]
                 for j in range(col, n + 1):
                     M[row][j] = (M[row][j] - factor * M[col][j]) % p
-
     return [row[-1] % p for row in M]
 class FSCAnalyzer:
     @staticmethod
@@ -233,6 +223,11 @@ class FSCAnalyzer:
         xors = np.bitwise_xor.reduce(reshaped, axis=1)
         if np.all(xors == xors[0]):
             candidates.append({'type': 'constant_xor', 'value': int(xors[0]), 'strength': 'exact', 'overhead_bytes': 1})
+
+        # Check for non-linear relationships
+        quadratic = FSCAnalyzer.find_quadratic_relationship(data, group_size)
+        for rel in quadratic:
+            candidates.append({"type": "quadratic_relationship", "details": rel, "strength": "exact", "overhead_bytes": 0})
 
         # Check for linear relationships
         linear = FSCAnalyzer.find_linear_relationship(data, group_size)
@@ -274,6 +269,35 @@ class FSCAnalyzer:
                                 'weights': {indep_indices[i]: int(weights[i]) for i in range(len(indep_indices))},
                                 'modulus': p
                             })
+        return relationships
+
+
+    @staticmethod
+    def find_quadratic_relationship(data: np.ndarray, group_size: int) -> list:
+        """
+        Detects if a field in the group is a sum-of-squares of others.
+        e.g. v[2] = sum(v[i]^2) % m
+        """
+        n_groups = len(data) // group_size
+        if n_groups == 0: return []
+        reshaped = data[:n_groups * group_size].reshape(n_groups, group_size).astype(np.int64)
+
+        relationships = []
+        for dep_idx in range(group_size):
+            indep_indices = [i for i in range(group_size) if i != dep_idx]
+            X = reshaped[:, indep_indices]
+            y = reshaped[:, dep_idx]
+
+            for m in [251, 65521, None]:
+                sum_sq = np.sum(X**2, axis=1)
+                if m: sum_sq %= m
+
+                if np.all(sum_sq == (y % m if m else y)):
+                    relationships.append({
+                        "dependent": dep_idx,
+                        "type": "sum_of_squares",
+                        "modulus": m
+                    })
         return relationships
 
 class FSCHealer:

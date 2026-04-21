@@ -19,6 +19,7 @@ This allows unique identification AND recovery of any single corrupted field.
 
 from typing import List, Optional, Dict
 from fsc.fsc_structural import AlgebraicFormat
+from fsc.fsc_native import FSC_SUCCESS, FSC_ERR_INVALID
 
 class StructuralLog:
     """
@@ -91,7 +92,7 @@ class StructuralLog:
         self.records.append(full_record)
         return pos
 
-    def verify_and_heal(self, index: int) -> bool:
+    def verify_and_heal(self, index: int) -> int:
         """
         Checks if the record at index is valid.
         If not, heals it using its structural position.
@@ -101,7 +102,7 @@ class StructuralLog:
 
         violations = fmt.validate()
         if not violations:
-            return True
+            return FSC_SUCCESS
 
         # print(f"  [DETECT] Record {index} invalid. Violations: {violations}")
         healed = fmt.heal()
@@ -111,7 +112,7 @@ class StructuralLog:
             field_idx = int(field_name[1:])
             self.records[index][field_idx] = healed['recovered']
             # print(f"  [HEAL] Field {field_idx} recovered: {healed['recovered']}")
-            return True
+            return FSC_SUCCESS
 
         return False
 

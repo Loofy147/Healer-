@@ -9,7 +9,7 @@ from typing import List, Any, Optional
 from collections import defaultdict
 from itertools import combinations
 from fsc.fsc_framework import solve_linear_system
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_multi64
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_multi64, native_heal_multi8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 FSC_COMMERCIAL_BUILD = False
 
@@ -173,7 +173,10 @@ class FSCReader:
             for _ in range(nc):
                 c_data = f.read(18)
                 ct, tg, si, mo = struct.unpack(">B q b q", c_data)
-                weights = list(struct.unpack(">" + "b"*nd, f.read(nd)))
+                if len(c_data) < 18: raise ValueError("Truncated constraint header")
+                weight_bytes = f.read(nd)
+                if len(weight_bytes) != nd: raise ValueError(f"Constraint weight mismatch: expected {nd}, got {len(weight_bytes)}")
+                weights = list(struct.unpack(">" + "b"*nd, weight_bytes))
                 is_fiber = (ct == 1)
                 m_val = mo if mo != 0 else None
                 t_val = tg if is_fiber or tg != 0 or si == -1                     else None
@@ -222,8 +225,8 @@ class FSCReader:
                 mask = (self._moduli == mod_val); actuals[mask] %= mod_val
         return np.all(actuals == targets)
 
-    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> bool:
-        if not self.constraints: return True
+    def verify_and_heal(self, record_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> int:
+        if not self.constraints: return FSC_SUCCESS
         record = self.records[record_idx]
         data_np = record[:len(self.data_fields)]
         record_indices = np.array([record_idx])
@@ -241,7 +244,7 @@ class FSCReader:
                 if mod_val == 0: continue
                 mask = (self._moduli == mod_val); actuals[mask] %= mod_val
         syndromes = (targets - actuals); failed = np.where(actuals != targets)[0]; passed = np.where(actuals == targets)[0]
-        if len(failed) == 0: return True
+        if len(failed) == 0: return FSC_SUCCESS
 
         er_indices = []
         if corrupted_field_idx != -1: er_indices = [corrupted_field_idx]
@@ -249,7 +252,7 @@ class FSCReader:
 
         if er_indices:
             t = len(er_indices)
-            if len(failed) < t: return False # Not enough constraints
+            if len(failed) < t: return FSC_ERR_BOUNDS
 
             # ATTEMPT NATIVE MULTI-FAULT ACCELERATION
             if is_native_available() and t >= 1 and len(failed) >= t:
@@ -265,11 +268,19 @@ class FSCReader:
                      all_weights = np.zeros((len(failed), len(self.data_fields)), dtype=np.int32)
                      for i, f_idx in enumerate(failed): all_weights[i] = self.constraints[f_idx].weights.astype(np.int32)
 
-                     rec_data = data_np.astype(np.int64).copy()
-                     if native_heal_multi64(rec_data, all_weights.flatten(), np.array(targets_list, dtype=np.int64), np.array([p]*len(failed), dtype=np.int64), er_indices):
-                         self.records[record_idx, :len(self.data_fields)] = rec_data
-                         fsc_audit_log("NATIVE_RECOVERY_KNOWN", 0, 0)
-                         return True
+                     is_uint8 = all(f.fmt == "B" for f in self.data_fields)
+                     if is_uint8:
+                         rec_data = data_np.astype(np.uint8).copy()
+                         if native_heal_multi8(rec_data, all_weights.flatten(), np.array(targets_list, dtype=np.int64), np.array([p]*len(failed), dtype=np.int64), er_indices):
+                             self.records[record_idx, :len(self.data_fields)] = rec_data.astype(np.int64)
+                             fsc_audit_log("NATIVE_RECOVERY_KNOWN_8", 0, 0)
+                             return FSC_SUCCESS
+                     else:
+                         rec_data = data_np.astype(np.int64).copy()
+                         if native_heal_multi64(rec_data, all_weights.flatten(), np.array(targets_list, dtype=np.int64), np.array([p]*len(failed), dtype=np.int64), er_indices):
+                             self.records[record_idx, :len(self.data_fields)] = rec_data
+                             fsc_audit_log("NATIVE_RECOVERY_KNOWN", 0, 0)
+                             return FSC_SUCCESS
 
             # FALLBACK TO COMBINATORIAL SUBSET SOLVING
             for c_subset in combinations(failed, t):
@@ -283,7 +294,7 @@ class FSCReader:
                             mag = int(round(sol[idx]))
                             self.records[record_idx, ci] = int(data_np[ci] + mag)
                             fsc_audit_log("RECOVERY_KNOWN", ci, mag)
-                        return True
+                        return FSC_SUCCESS
                     except Exception: continue
                 else:
                     A = self._weight_matrix[list(c_subset)][:, list(er_indices)] % p
@@ -294,8 +305,8 @@ class FSCReader:
                             mag = int(sol[idx])
                             self.records[record_idx, ci] = (int(data_np[ci]) + mag) % p
                             fsc_audit_log("RECOVERY_KNOWN_MOD", ci, mag)
-                        return True
-            return False
+                        return FSC_SUCCESS
+            return FSC_ERR_INVALID
 
         # BLIND RECOVERY
         if passed.size > 0:
@@ -313,12 +324,13 @@ class FSCReader:
                     target = (record_idx % (self.constraints[i1].modulus or 251) if self.constraints[i1].is_fiber else (self.constraints[i1].target if self.constraints[i1].target is not None else record[self.constraints[i1].stored_field_idx]))
 
                     for ci in t1_candidates:
+                        if self.constraints[i1].weights[ci] == 0: continue
                         mag = native_heal_single64(data_np, self.constraints[i1].weights.astype(np.int32), target, p1, ci)
                         orig_val = self.records[record_idx, ci]
                         self.records[record_idx, ci] = mag
                         if self._verify_record(record_idx, self.records[record_idx, :len(self.data_fields)]):
                              fsc_audit_log("NATIVE_RECOVERY_BLIND_SINGLE", ci, 0)
-                             return True
+                             return FSC_SUCCESS
                         self.records[record_idx, ci] = orig_val
 
                 cand_indices = np.array(t1_candidates)
@@ -341,7 +353,7 @@ class FSCReader:
                                     mag = (s1 * pow(int(self._weight_matrix[i1, ci] % p1), -1, p1)) % p1
                                     self.records[record_idx, ci] = (int(data_np[ci]) + mag) % p1
                                     fsc_audit_log("RECOVERY_BLIND_MOD_VEC", ci, mag)
-                                    return True
+                                    return FSC_SUCCESS
                                 except ValueError: pass
                     else:
                         nonzero = (w1 != 0)
@@ -358,7 +370,7 @@ class FSCReader:
                                     mag = s1 // int(self._weight_matrix[i1, ci])
                                     self.records[record_idx, ci] = int(data_np[ci] + mag)
                                     fsc_audit_log("RECOVERY_BLIND_VEC", ci, mag)
-                                    return True
+                                    return FSC_SUCCESS
 
             # MULTI-FAULT BLIND SEARCH
             search_space = range(len(self.data_fields))
@@ -377,7 +389,7 @@ class FSCReader:
                                     mag = int(round(sol[idx]))
                                     self.records[record_idx, ci] = test_v[ci]
                                     fsc_audit_log("RECOVERY_BLIND", ci, mag)
-                                return True
+                                return FSC_SUCCESS
                         except Exception: continue
                     else:
                         A = self._weight_matrix[list(c_subset)][:, list(combo)] % p
@@ -391,8 +403,8 @@ class FSCReader:
                                     mag = int(sol[idx])
                                     self.records[record_idx, ci] = test_v[ci]
                                     fsc_audit_log("RECOVERY_BLIND_MOD", ci, mag)
-                                return True
-        return False
+                                return FSC_SUCCESS
+        return FSC_ERR_INVALID
 
     def verify_all_records(self) -> np.ndarray:
         if not self.constraints or len(self.records) == 0: return np.ones(len(self.records), dtype=bool)
