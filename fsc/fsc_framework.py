@@ -173,26 +173,52 @@ class IterativeNonLinearSolver:
         return x
 
 def gf_inv(a, p):
-    return pow(int(a), p-2, p)
+    """Modular inverse over GF(p) using Fermat's Little Theorem."""
+    return pow(int(a), p - 2, p)
 
 def solve_linear_system(A, b, p):
-    """Gaussian elimination over GF(p)."""
+    """
+    Gaussian elimination over GF(p).
+    Returns list of solutions or None if the system is singular or has no solution.
+    """
     n = len(b)
-    M = [[int(A[i][j]) % p for j in range(n)] + [int(b[i]) % p]
-         for i in range(n)]
+    if n == 0: return []
+
+    # Augmented matrix M = [A | b]
+    M = []
+    for i in range(n):
+        row = [int(val) % p for val in A[i]]
+        row.append(int(b[i]) % p)
+        M.append(row)
+
     for col in range(n):
-        pivot = next((r for r in range(col,n) if M[r][col]%p != 0), None)
-        if pivot is None: return None
+        # Pivot selection: find a non-zero element in the current column
+        pivot = -1
+        for r in range(col, n):
+            if M[r][col] % p != 0:
+                pivot = r
+                break
+
+        if pivot == -1:
+            # Column is all zeros, system is singular
+            return None
+
+        # Swap current row with pivot row
         M[col], M[pivot] = M[pivot], M[col]
+
+        # Normalize the pivot row
         inv_piv = gf_inv(M[col][col], p)
-        M[col] = [(v * inv_piv) % p for v in M[col]]
+        for j in range(col, n + 1):
+            M[col][j] = (M[col][j] * inv_piv) % p
+
+        # Eliminate other entries in this column
         for row in range(n):
             if row != col and M[row][col] != 0:
                 factor = M[row][col]
-                M[row] = [(M[row][j] - factor*M[col][j]) % p
-                           for j in range(n+1)]
-    return [row[-1] % p for row in M]
+                for j in range(col, n + 1):
+                    M[row][j] = (M[row][j] - factor * M[col][j]) % p
 
+    return [row[-1] % p for row in M]
 class FSCAnalyzer:
     @staticmethod
     def analyze(data: np.ndarray, group_size: int = 4) -> dict:
