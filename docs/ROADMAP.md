@@ -8,19 +8,19 @@ FSC, via `libfsc`, is designed as a bare-metal primitive. It has no standard lib
 
 **Note on IP Protection**: While the mathematical primitive is concise, the true engineering moat lies in the **Integration Complexity**. Successfully injecting zero-overhead algebraic healing into massive, high-performance C codebases (like SQLite or the Linux Kernel) requires precision engineering that cannot be easily replicated.
 
-### 1.1 The SQLite Injection (Database Level)
+### 1.1 The SQLite Injection (Database Level) - [IN PROGRESS]
 *   **Target**: The `sqlite3PagerGet()` function in the SQLite open-source engine.
 *   **Integration**: Inject `fsc_heal()` into the page retrieval logic.
 *   **Outcome**: Transparent self-healing for database pages. SQLite databases become mathematically resistant to silent corruption during power failures or storage degradation.
 
-### 1.2 The Linux Kernel Module (Filesystem/Block Level)
+### 1.2 The Linux Kernel Module (Filesystem/Block Level) - [IN PROGRESS]
 *   **Target**: A custom block device driver (e.g., `/dev/fsc_drive`).
 *   **Integration**:
     *   **Writes**: Calculate a 16-byte FSC syndrome for every 4KB block and append it to the metadata.
     *   **Reads**: Perform O(1) syndrome verification.
 *   **Outcome**: A self-healing file system where bit-rot and sector errors are corrected at the driver level before the OS even sees them.
 
-### 1.3 The Network Socket (Protocol Level)
+### 1.3 The Network Socket (Protocol Level) - [IN PROGRESS]
 *   **Target**: UDP-based real-time streaming (Video, VoIP, Gaming).
 *   **Integration**: Wrap standard UDP packets in an FSC header.
 *   **Outcome**: Instead of TCP-style retransmission (requesting "resend packet 42"), the receiver's C-code algebraically regenerates dropped packets instantly, eliminating jitter and latency caused by packet loss.

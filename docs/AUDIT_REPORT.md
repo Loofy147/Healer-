@@ -3,7 +3,7 @@
 ## 1. Achievement Report (Phase 2 & 3 Integration)
 
 ### 1.1 Multi-Constraint Binary (Model 5) - COMPLETE
-*   **Status**: Fully implemented in `fsc/fsc_binary.py` (Version 3).
+*   **Status**: Fully implemented in `fsc/fsc_binary.py` (Version 4).
 *   **Features**: Supports multiple linear constraints per record with persistent `modulus` metadata.
 *   **Localization**: `FSCReader.verify_and_heal` performs automatic single-fault localization using constraint intersection.
 
@@ -20,6 +20,19 @@
 ### 1.4 2D Page Integrity - COMPLETE
 *   **Status**: Upgraded in `fsc/fsc_page.py`.
 *   **Modular Support**: Iterative engine now handles modular column parity, allowing recovery of multi-erasure blocks.
+
+### 1.5 Sector-Aware & Persistent Storage - COMPLETE
+*   **Status**: Implemented in `fsc/fsc_block.py` and `fsc/fsc_persistent_storage.py`.
+*   **Method**: Hierarchical healing (Internal Model 5 + External XOR Parity).
+*   **Performance**: LRU cache integrated for efficient file-backed block access.
+
+### 1.6 Generalized Syndrome Decoding - COMPLETE
+*   **Status**: Upgraded in `fsc/fsc_binary.py`.
+*   **Optimization**: Replaced brute-force combinatorial search with syndrome-based algebraic localization, enabling efficient k-fault recovery.
+
+### 1.7 Recovery Robustness & Solver Hardening - COMPLETE
+*   **Status**: Implemented in `fsc/fsc_binary.py` and `fsc/fsc_framework.py`.
+*   **Improvements**: Refactored recovery flow to fix indentation/logic errors and hardened the Gaussian elimination solver with explicit singularity detection.
 
 ---
 
@@ -40,15 +53,6 @@
 1.  **Mnemonic Recovery**: `prototypes/wallet_recovery.py` - Recovers 12-word seeds from 10 words + invariants.
 2.  **Code Integrity**: `prototypes/code_integrity.py` - Character-level self-healing for source files.
 3.  **H.264 DC Recovery**: `prototypes/video_h264.py` - Macroblock DCT artifact elimination.
-
-### 1.5 Sector-Aware & Persistent Storage - COMPLETE
-*   **Status**: Implemented in `fsc/fsc_block.py` and `fsc/fsc_persistent_storage.py`.
-*   **Method**: Hierarchical healing (Internal Model 5 + External XOR Parity).
-*   **Performance**: LRU cache integrated for efficient file-backed block access.
-
-### 1.6 Generalized Syndrome Decoding - COMPLETE
-*   **Status**: Upgraded in `fsc/fsc_binary.py`.
-*   **Optimization**: Replaced brute-force combinatorial search with syndrome-based algebraic localization, enabling efficient k-fault recovery.
 
 ---
 
