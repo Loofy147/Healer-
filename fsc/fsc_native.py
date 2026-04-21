@@ -105,6 +105,12 @@ def native_calculate_sum8(data: np.ndarray, weights: Optional[np.ndarray], modul
     weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
     return _lib.fsc_calculate_sum8(data_ptr, weights_ptr, len(data), modulus)
 
+def native_heal_single8(data: np.ndarray, weights: Optional[np.ndarray], target: int, modulus: int, corrupted_idx: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    weights_ptr = weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None
+    return _lib.fsc_heal_single8(data_ptr, weights_ptr, len(data), target, modulus, corrupted_idx)
+
 def native_calculate_sum64(data: np.ndarray, weights: Optional[np.ndarray], modulus: int) -> int:
     if not _lib: raise RuntimeError("Native library not loaded")
     data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64))

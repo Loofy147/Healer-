@@ -12,7 +12,8 @@ for database pages, kernel block devices, and network protocols.
 import numpy as np
 import struct
 from typing import List, Optional, Tuple
-from fsc.fsc_framework import solve_linear_system
+from fsc.fsc_framework import solve_linear_system, gf_inv
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -70,7 +71,11 @@ class FSCBlock:
                 s3 == (self.block_id * 13) % self.m)
 
     def heal(self) -> bool:
-        # O(1) Algebraic Localization (Model 5)
+        """
+        Internal block healing.
+        Returns True if the block is valid (either was OK or successfully healed).
+        Returns False if the block is irrecoverably corrupted (erasure candidate).
+        """
         n = self.size
         m = self.m
         d = self.data.astype(np.int64)
@@ -86,86 +91,123 @@ class FSCBlock:
         syn2 = (s2 - t2) % m
         syn3 = (s3 - t3) % m
 
-        if syn1 == 0:
-            # If syn1 is 0 but syn2/syn3 are not, it's not a single corruption
-            # or it's a corruption in a way that preserves the sum but not the weighted sum.
-            return False
+        if syn1 == 0: return False
 
-        # i + 1 = syn2 / syn1
         try:
-            w = (syn2 * pow(syn1, -1, m)) % m
-            if w == 0 or w > n:
-                return False
+            w = (syn2 * gf_inv(syn1, m)) % m
+            if w == 0 or w > n: return False
 
             # Verify with third syndrome
-            if (w * syn2) % m != syn3:
-                return False
+            if (w * syn2) % m != syn3: return False
 
             idx = int(w - 1)
             val = int(self.data[idx])
             self.data[idx] = (val - syn1) % 256
             return True
-        except ValueError:
-            # No modular inverse
-            return False
+        except ValueError: return False
 
 class FSCVolume:
-    def __init__(self, n_blocks: int, block_size: int = 512):
-        self.blocks = [FSCBlock(i, block_size) for i in range(n_blocks)]
+    """
+    Algebraic RAID Volume.
+    Provides K-fault tolerance across blocks using Model 5 (Algebraic Parity).
+    """
+    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2):
         self.n_blocks = n_blocks
         self.block_size = block_size
+        self.k_parity = k_parity
+        self.n_data_blocks = n_blocks - k_parity
+        self.blocks = [FSCBlock(i, block_size) for i in range(n_blocks)]
+        self.m = 251 # Cross-block Galois Field modulus
 
     def write_volume(self, data: bytes):
+        """
+        Write data across data blocks and generate K algebraic parity blocks.
+        Each block (including parity) is a valid self-healing FSCBlock.
+        """
         chunk_size = self.blocks[0].data_len
-        for i in range(self.n_blocks - 1):
+        for i in range(self.n_data_blocks):
             start = i * chunk_size
             chunk = data[start:start+chunk_size]
             self.blocks[i].write(chunk)
 
-        # Cross-block XOR Parity of the FULL DATA (including invariants)
-        # To make it simple, we'll XOR the entire block contents
-        parity_content = np.zeros(self.block_size, dtype=np.uint8)
-        for i in range(self.n_blocks - 1):
-            parity_content = np.bitwise_xor(parity_content, self.blocks[i].data)
+        # Generate K parity blocks over the data_len payload
+        for j in range(self.k_parity):
+            p_idx = self.n_data_blocks + j
+            parity_payload = np.zeros(self.blocks[0].data_len, dtype=np.int64)
+            for i in range(self.n_data_blocks):
+                w = pow(i + 1, j, self.m)
+                parity_payload += self.blocks[i].data[:self.blocks[0].data_len].astype(np.int64) * w
 
-        # The last block stores this XOR parity.
-        # Note: This block will NOT satisfy its own internal Model 5 invariants
-        # unless we re-calculate them, but then the XOR property is lost for those bytes.
-        # RAID-5 usually doesn't have internal block checksums.
-        # Here we'll just store it raw and skip internal heal for the parity block in hierarchical mode if it fails.
-        self.blocks[-1].data = parity_content
+            # Seal the parity block with its own internal invariants
+            self.blocks[p_idx].write((parity_payload % self.m).astype(np.uint8).tobytes())
 
     def heal_volume(self) -> int:
-        healed_count = 0
-        # For the parity block, we just check if it matches the XOR sum of others
-        def check_parity():
-            p = np.zeros(self.block_size, dtype=np.uint8)
-            for i in range(self.n_blocks - 1): p = np.bitwise_xor(p, self.blocks[i].data)
-            return np.array_equal(p, self.blocks[-1].data)
-
+        """
+        Heals volume by identifying bad blocks (erasure detection)
+        and solving the cross-block linear system to regenerate them.
+        """
+        # 1. Internal block healing (Scattered bit-flips)
         bad_indices = []
-        for i in range(self.n_blocks - 1):
+        for i in range(self.n_blocks):
             if not self.blocks[i].heal():
                 bad_indices.append(i)
 
-        # If parity block itself is bad
-        if not check_parity() and not bad_indices:
-            # We don't have another way to heal parity block if it's the only one bad
-            # But we can recompute it!
-            p = np.zeros(self.block_size, dtype=np.uint8)
-            for i in range(self.n_blocks - 1): p = np.bitwise_xor(p, self.blocks[i].data)
-            self.blocks[-1].data = p
-            # healed_count += 1 # Not really healing data, just parity
-            return 0
+        if not bad_indices: return 0
+        if len(bad_indices) > self.k_parity:
+            return -1
 
-        if len(bad_indices) == 1:
-            idx = bad_indices[0]
-            rec = np.zeros(self.block_size, dtype=np.uint8)
-            for i in range(self.n_blocks):
-                if i != idx: rec = np.bitwise_xor(rec, self.blocks[i].data)
-            self.blocks[idx].data = rec
-            healed_count += 1
-        return healed_count
+        # 2. Cross-block recovery (Algebraic Regeneration of data_len payload)
+        n_lost = len(bad_indices)
+        A = []
+        for j in range(n_lost):
+            row = []
+            for bi in bad_indices:
+                if bi < self.n_data_blocks:
+                    row.append(pow(bi + 1, j, self.m))
+                else:
+                    # Parity block bi is lost. It only participates in its own equation (j == bi-n_data)
+                    p_idx = bi - self.n_data_blocks
+                    # Weight is -1 because it's on the LHS: sum(w_i B_i) - P_j = 0
+                    row.append(-1 if p_idx == j else 0)
+            A.append(row)
+
+        all_data = np.zeros((self.n_blocks, self.blocks[0].data_len), dtype=np.int64)
+        for i in range(self.n_blocks):
+            if i not in bad_indices:
+                all_data[i] = self.blocks[i].data[:self.blocks[0].data_len]
+
+        b = np.zeros((n_lost, self.blocks[0].data_len), dtype=np.int64)
+        for j in range(n_lost):
+            p_idx = self.n_data_blocks + j
+            known_sum = np.zeros(self.blocks[0].data_len, dtype=np.int64)
+            for i in range(self.n_data_blocks):
+                if i not in bad_indices:
+                    w = pow(i + 1, j, self.m)
+                    known_sum += all_data[i] * w
+
+            if p_idx not in bad_indices:
+                # synd = target - actual
+                b[j] = (all_data[p_idx] - known_sum) % self.m
+            else:
+                b[j] = (-known_sum) % self.m
+
+        # Solve for each byte of the payload
+        for col in range(self.blocks[0].data_len):
+            sol = solve_linear_system(A, b[:, col].tolist(), self.m)
+            if sol:
+                for k, bi in enumerate(bad_indices):
+                    # Temporarily store recovered byte in data array
+                    self.blocks[bi].data[col] = int(sol[k]) % 256
+            else:
+                return -2
+
+        # 3. Restore internal invariants for recovered blocks
+        for bi in bad_indices:
+            payload = self.blocks[bi].data[:self.blocks[0].data_len].tobytes()
+            self.blocks[bi].write(payload)
+
+        return n_lost
+
 
     def read_volume(self) -> bytes:
-        return b"".join(b.data[:b.data_len].tobytes() for b in self.blocks[:-1])
+        return b"".join(b.data[:b.data_len].tobytes() for b in self.blocks[:self.n_data_blocks])

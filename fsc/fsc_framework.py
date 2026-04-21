@@ -179,12 +179,13 @@ def gf_inv(a, p):
 def solve_linear_system(A, b, p):
     """
     Gaussian elimination over GF(p).
-    Returns list of solutions or None if the system is singular or has no solution.
+    Returns list of solutions or None if the system is singular.
     """
     n = len(b)
     if n == 0: return []
 
-    # Augmented matrix M = [A | b]
+    # Use higher precision for intermediate sums if needed,
+    # but here we are in Python with arbitrary precision ints.
     M = []
     for i in range(n):
         row = [int(val) % p for val in A[i]]
@@ -192,32 +193,21 @@ def solve_linear_system(A, b, p):
         M.append(row)
 
     for col in range(n):
-        # Pivot selection: find a non-zero element in the current column
         pivot = -1
         for r in range(col, n):
             if M[r][col] % p != 0:
                 pivot = r
                 break
-
-        if pivot == -1:
-            # Column is all zeros, system is singular
-            return None
-
-        # Swap current row with pivot row
+        if pivot == -1: return None
         M[col], M[pivot] = M[pivot], M[col]
-
-        # Normalize the pivot row
         inv_piv = gf_inv(M[col][col], p)
         for j in range(col, n + 1):
             M[col][j] = (M[col][j] * inv_piv) % p
-
-        # Eliminate other entries in this column
         for row in range(n):
             if row != col and M[row][col] != 0:
                 factor = M[row][col]
                 for j in range(col, n + 1):
                     M[row][j] = (M[row][j] - factor * M[col][j]) % p
-
     return [row[-1] % p for row in M]
 class FSCAnalyzer:
     @staticmethod
