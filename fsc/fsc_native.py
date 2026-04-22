@@ -13,8 +13,11 @@ FSC_ERR_SINGULAR = 0
 FSC_ERR_BOUNDS  = -1
 FSC_ERR_INVALID = -2
 
-# Load the shared library
-_LIB_PATH = os.path.join(os.getcwd(), "libfsc.so")
+
+# Load the shared library from the absolute repository root
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LIB_PATH = os.path.join(_REPO_ROOT, "libfsc.so")
+
 _lib = None
 if os.path.exists(_LIB_PATH):
     try:

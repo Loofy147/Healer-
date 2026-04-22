@@ -1,6 +1,7 @@
 """
 FSC: Forward Sector Correction - Hardened & Accelerated Implementation (v4)
 """
+import os
 
 import numpy as np
 import struct
@@ -12,6 +13,10 @@ from fsc.fsc_framework import solve_linear_system
 from fsc.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_multi64, native_heal_multi8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 FSC_COMMERCIAL_BUILD = False
+MAX_FIELDS = 1024
+MAX_CONSTRAINTS = 1024
+MAX_RECORDS = 10000000  # 10M records limit
+
 
 def fsc_audit_log(event_type: str, index: int, magnitude: int):
     """Enterprise Audit Logging hook."""
@@ -138,9 +143,17 @@ class FSCReader:
             if magic == b"FSC1":
                 header_data = f.read(9)
                 _, nd, nc, ns, nr = struct.unpack(">B HB B I", header_data)
+
+                if nd > MAX_FIELDS or nc > MAX_CONSTRAINTS or nr > MAX_RECORDS:
+                    raise ValueError(f"Resource limit exceeded: fields={nd}, constraints={nc}, records={nr}")
+
             elif magic == b"FSC4":
                 header_data = f.read(18)
                 ver, nd, nc, ns, nr, s1, s2 = struct.unpack(">B HH B I II", header_data)
+
+                if nd > MAX_FIELDS or nc > MAX_CONSTRAINTS or nr > MAX_RECORDS:
+                    raise ValueError(f"Resource limit exceeded: fields={nd}, constraints={nc}, records={nr}")
+
                 meta = [nd, nc, ns, nr]
                 calc_s1 = sum(meta) % (2**32)
                 calc_s2 = sum((i+1)*v for i,v in enumerate(meta)) % (2**32)
@@ -166,6 +179,7 @@ class FSCReader:
                 name_bytes = struct.unpack(">16s", f.read(16))[0]
                 name = name_bytes.decode('ascii').strip()
                 ft_idx = struct.unpack(">B", f.read(1))[0]
+                if ft_idx >= len(ftypes): raise ValueError(f"Invalid field type index: {ft_idx}")
                 self.data_fields.append(FSCField(name, ftypes[ft_idx]))
             self.all_fields = list(self.data_fields)
             for i in range(ns):
@@ -184,14 +198,22 @@ class FSCReader:
                     np.array(weights, dtype=np.int64), t_val,
                     is_fiber=is_fiber, modulus=m_val
                 )
+                if si != -1 and (si < 0 or si >= nd + ns): raise ValueError(f"Invalid stored_field_idx: {si}")
                 c.stored_field_idx = si
                 self.constraints.append(c)
             dtype_list = []
             for f_info in self.all_fields:
                 dtype_list.append((f_info.name, ">" + f_info.fmt))
+
             if nr > 0:
                 dt = np.dtype(dtype_list)
-                raw_data = f.read(dt.itemsize * nr)
+                expected_size = dt.itemsize * nr
+                file_size = os.path.getsize(self.filename)
+                current_pos = f.tell()
+                if current_pos + expected_size > file_size:
+                    raise ValueError(f"File truncated: expected {expected_size} more bytes, but only {file_size - current_pos} available")
+                raw_data = f.read(expected_size)
+
                 structured_recs = np.frombuffer(raw_data, dtype=dt)
                 self.records = np.zeros((nr, len(self.all_fields)), dtype=np.int64)
                 for i, f_info in enumerate(self.all_fields):
