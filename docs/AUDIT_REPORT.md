@@ -71,3 +71,25 @@ Refer to **[ROADMAP.md](docs/ROADMAP.md)** for the full commercialization strate
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 Protected by **AGPLv3** and **Patent Pending** status.
 See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.
+
+---
+
+## 5. Security and Ethics Audit
+
+### 5.1 Flagged Problematic Files
+The following files have been flagged for security review due to their inclusion of offensive algebraic capabilities or sensitive targeting data:
+*   **`immortality_research.py`**: Strategic research document detailing "The Sovereign Arsenal" and offensive deployment topologies.
+*   **`prototypes/database_forger.py`**: Offensive utility for invisible modification of database pages while maintaining algebraic checksums.
+*   **`prototypes/network_ghost.py`**: Topological steganography prototype for hiding covert payloads in valid data streams.
+*   **`prototypes/solana_recovery.py`**: Brute-force recovery tool containing specific blockchain wallet addresses.
+*   **`prototypes/sha256_autopsy.py`**: Experimental kernel-level hash analysis tool with potential for cryptographic misuse.
+
+### 5.2 Identified Risks
+1.  **Algebraic Spoofing**: The ability to forge data while satisfying complex parity invariants could be used to bypass financial or forensic audits.
+2.  **Covert Channels**: Topological steganography enables communication that is mathematically invisible to traditional Deep Packet Inspection (DPI).
+3.  **Cryptographic Brute-Force**: High-performance algebraic solvers can be repurposed to accelerate the recovery of missing secrets in cryptographic schemes.
+
+### 5.3 Remediation Actions
+*   Mandatory "FLAGGED FOR SECURITY REVIEW" headers added to all high-risk files.
+*   Redaction of specific wallet addresses and target identifiers from public log files.
+*   Restrict the deployment of offensive prototypes to isolated research environments.
