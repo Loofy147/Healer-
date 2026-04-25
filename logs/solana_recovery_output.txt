@@ -1,4 +1,4 @@
-[*] Targeting Wallet A: 7jDVmS8HBdDNdtGXSxepjcktvG6FzbPurZvYUVgY7TG5
+[*] Targeting Wallet A: [REDACTED_ADDRESS]
 [-] Failed.
-[*] Targeting Wallet B: 93HMaKqUW6VWLJbYCvgViKn176wUcYFq2pfXh1LHkCfj
+[*] Targeting Wallet B: [REDACTED_ADDRESS]
 [-] Failed.

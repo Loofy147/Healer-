@@ -1,3 +1,11 @@
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !!! FLAGGED FOR SECURITY REVIEW: OFFENSIVE ALGEBRAIC TOOL !!!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# This file contains capabilities for database forgery, covert
+# communication, or cryptographic brute-forcing.
+# DO NOT DEPLOY IN PRODUCTION ENVIRONMENTS.
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
