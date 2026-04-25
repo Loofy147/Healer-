@@ -1,6 +1,6 @@
 # FSC Universal Framework: Audit Report & Development Roadmap
 
-## 1. Achievement Report (Phase 2 & 3 Integration)
+## 1. Achievement Report (Phase 2, 3, & 4 Integration)
 
 ### 1.1 Multi-Constraint Binary (Model 5) - COMPLETE
 *   **Status**: Fully implemented in `fsc/fsc_binary.py` (Version 4).
@@ -34,31 +34,26 @@
 *   **Status**: Implemented in `fsc/fsc_binary.py` and `fsc/fsc_framework.py`.
 *   **Improvements**: Refactored recovery flow to fix indentation/logic errors and hardened the Gaussian elimination solver with explicit singularity detection.
 
----
+### 1.8 Recursive Metadata Protection (v5) - COMPLETE
+*   **Status**: Implemented in `fsc/fsc_binary.py`.
+*   **Mechanism**: Meta-invariant treats the constraint block as a protected record using a 64-bit Mersenne Prime ($2^{61}-1$).
+*   **Benefit**: Eliminates the "Bootstrap Fragility" where header corruption made files unreadable.
 
-## 2. Updated Roadmap (Phase 4: Optimization & Deployment)
+### 1.9 Entropy-Weighted Dynamic Stratification (v6) - COMPLETE
+*   **Status**: Implemented in `fsc/fsc_dynamic.py`.
+*   **Mechanism**: Adaptive weights prioritizing low-entropy metadata (UINT32/64) over high-entropy BLOBS (UINT8).
+*   **Benefit**: Prevents parity masking and interference in heterogeneous data streams.
 
-#### 2.1 Performance Tuning
-*   **Action**: Investigate JIT (Numba) or C-extensions for high-speed multi-fault recovery on large records.
-
-#### 2.2 Formal Verification
-*   **Action**: Use formal methods (e.g. TLA+) to prove safety and correctness of the cross-record cascade healing protocol.
-
-#### 2.3 Sector-Aware Storage
-*   **Action**: Integrate with raw disk block APIs to demonstrate healing of physical sector corruption in real-time.
-
----
-
-## 3. High-Impact Showcases
-1.  **Mnemonic Recovery**: `prototypes/wallet_recovery.py` - Recovers 12-word seeds from 10 words + invariants.
-2.  **Code Integrity**: `prototypes/code_integrity.py` - Character-level self-healing for source files.
-3.  **H.264 DC Recovery**: `prototypes/video_h264.py` - Macroblock DCT artifact elimination.
+### 1.10 Proactive Algebraic Volume Scrubbing (v7) - COMPLETE
+*   **Status**: Implemented in `fsc/fsc_block.py`.
+*   **Mechanism**: Background `scrub()` identifying and repairing latent internal/external bit-rot.
+*   **Benefit**: Prevents accumulation of errors beyond the RAID threshold in large volumes.
 
 ---
 
-## 4. Strategic Outlook (v4 Expansion)
+## 2. Strategic Outlook (Phase 4 Expansion)
 
-### 4.1 Enterprise Integration Roadmap
+### 2.1 Enterprise Integration Roadmap
 The roadmap for real-world deployment focuses on three key pillars:
 1.  **Bare-metal Injection**: Leveraging `libfsc`'s zero-dependency nature to harden mission-critical software like SQLite and the Linux Kernel.
 2.  **Infrastructure Licensing**: Scaling the technology by partnering with Cloud Service Providers (CSPs) to optimize storage durability vs. cost.
@@ -67,16 +62,10 @@ The roadmap for real-world deployment focuses on three key pillars:
 Refer to **[ROADMAP.md](docs/ROADMAP.md)** for the full commercialization strategy.
 
 ---
-**FSC Defensive Strategy Notice**
-Copyright (C) 2024 FSC Core Team. All Rights Reserved.
-Protected by **AGPLv3** and **Patent Pending** status.
-See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.
 
----
+## 3. Security and Ethics Audit
 
-## 5. Security and Ethics Audit
-
-### 5.1 Flagged Problematic Files
+### 3.1 Flagged Problematic Files
 The following files have been flagged for security review due to their inclusion of offensive algebraic capabilities or sensitive targeting data:
 *   **`immortality_research.py`**: Strategic research document detailing "The Sovereign Arsenal" and offensive deployment topologies.
 *   **`prototypes/database_forger.py`**: Offensive utility for invisible modification of database pages while maintaining algebraic checksums.
@@ -84,12 +73,18 @@ The following files have been flagged for security review due to their inclusion
 *   **`prototypes/solana_recovery.py`**: Brute-force recovery tool containing specific blockchain wallet addresses.
 *   **`prototypes/sha256_autopsy.py`**: Experimental kernel-level hash analysis tool with potential for cryptographic misuse.
 
-### 5.2 Identified Risks
+### 3.2 Identified Risks
 1.  **Algebraic Spoofing**: The ability to forge data while satisfying complex parity invariants could be used to bypass financial or forensic audits.
 2.  **Covert Channels**: Topological steganography enables communication that is mathematically invisible to traditional Deep Packet Inspection (DPI).
 3.  **Cryptographic Brute-Force**: High-performance algebraic solvers can be repurposed to accelerate the recovery of missing secrets in cryptographic schemes.
 
-### 5.3 Remediation Actions
+### 3.3 Remediation Actions
 *   Mandatory "FLAGGED FOR SECURITY REVIEW" headers added to all high-risk files.
 *   Redaction of specific wallet addresses and target identifiers from public log files.
 *   Restrict the deployment of offensive prototypes to isolated research environments.
+
+---
+**FSC Defensive Strategy Notice**
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+Protected by **AGPLv3** and **Patent Pending** status.
+See [docs/DEFENSIVE_STRATEGY.md](docs/DEFENSIVE_STRATEGY.md) for full licensing and patent details.

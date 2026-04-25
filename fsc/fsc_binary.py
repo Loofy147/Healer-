@@ -1,5 +1,12 @@
 """
 FSC: Forward Sector Correction - Hardened Recursive Implementation (v5)
+Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+
+PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
+COMMERCIAL LICENSE: Required for proprietary/enterprise use.
+
+PATENT PENDING: Industrial applications of these algebraic primitives
+for database pages, kernel block devices, and network protocols.
 """
 import os
 import numpy as np
@@ -51,6 +58,7 @@ class FSCWriter:
     def __init__(self, schema: FSCSchema):
         self.schema = schema
         self._record_list = []
+        self.all_fields = list(schema.all_fields)
     def add_record(self, data: Any): self.add_records([data])
     def add_records(self, data: Any):
         source_np = np.array(data, dtype=np.int64)
@@ -158,7 +166,7 @@ class FSCReader:
     def _verify_record(self, r_idx: int, data: np.ndarray) -> bool:
         rec = self.records[r_idx]
         for i, c in enumerate(self.constraints):
-            target = (r_idx % c.modulus) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
+            target = (r_idx % (c.modulus or 251)) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
             actual = np.dot(data, c.weights)
             if c.modulus: actual %= c.modulus
             if actual != target: return False
@@ -170,7 +178,7 @@ class FSCReader:
         rec = self.records[r_idx]; data_np = rec[:len(self.data_fields)].copy()
         failed = []; syndromes = []
         for i, c in enumerate(self.constraints):
-            target = (r_idx % c.modulus) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
+            target = (r_idx % (c.modulus or 251)) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
             actual = np.dot(data_np, c.weights)
             if c.modulus: actual %= c.modulus; synd = (target - actual) % c.modulus
             else: synd = target - actual
@@ -180,9 +188,9 @@ class FSCReader:
         syndromes = np.array(syndromes, dtype=np.int64); failed = np.array(failed, dtype=np.int32)
         if er_indices:
             for t in range(1, len(failed) + 1):
-                if t > len(er_indices): break # Cannot solve for more erasures than we have equations
+                if t > len(er_indices): break
                 for c_subset in combinations(failed, t):
-                    if len(c_subset) < len(er_indices): continue # Need exactly len(er_indices) equations
+                    if len(c_subset) < len(er_indices): continue
                     p = self.constraints[c_subset[0]].modulus
                     A = self._weight_matrix[list(c_subset)][:, list(er_indices)]
                     if p:

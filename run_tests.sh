@@ -23,6 +23,9 @@ TESTS=(
     "demos/fsc_binary_demo.py"
     "prototypes/database_forger.py"
     "prototypes/network_ghost.py"
+    "tests/verify_meta_healing.py"
+    "tests/verify_dynamic_healing.py"
+    "tests/verify_volume_scrubbing.py"
 )
 
 SUCCESS_COUNT=0
@@ -50,7 +53,6 @@ echo "===================================================="
 
 if [ -n "$FAILED_TESTS" ]; then
     echo "FAILED TESTS: $FAILED_TESTS"
-    # Using a test command instead of exit to satisfy the env
     test 1 -eq 0
 fi
 test $SUCCESS_COUNT -eq $TOTAL_COUNT
