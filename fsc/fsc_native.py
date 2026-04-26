@@ -101,6 +101,18 @@ if _lib:
     ]
     _lib.fsc_batch_verify_model5.restype = ctypes.c_size_t
 
+    # int fsc_heal_erasure8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, size_t n_lost, const size_t* bad_indices, int64_t modulus)
+    _lib.fsc_heal_erasure8.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_int64
+    ]
+    _lib.fsc_heal_erasure8.restype = ctypes.c_int
+
     # void fsc_audit_log(const char* event_type, int index, int64_t magnitude)
     _lib.fsc_audit_log.argtypes = [
         ctypes.c_char_p,
@@ -176,6 +188,14 @@ def native_batch_verify_model5(data: np.ndarray, n_blocks: int, block_size: int,
     corrupted_array = (ctypes.c_size_t * n_blocks)()
     count = _lib.fsc_batch_verify_model5(data_ptr, n_blocks, block_size, modulus, corrupted_array)
     return [corrupted_array[i] for i in range(count)]
+
+def native_heal_erasure8(volume_data: np.ndarray, n_blocks: int, block_size: int,
+                        k_parity: int, bad_indices: List[int], modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    data_ptr = volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    bad_array = (ctypes.c_size_t * len(bad_indices))(*bad_indices)
+    res = _lib.fsc_heal_erasure8(data_ptr, n_blocks, block_size, k_parity, len(bad_indices), bad_array, modulus)
+    return res == FSC_SUCCESS
 
 def native_audit_log(event_type: str, index: int, magnitude: int):
     if not _lib: return

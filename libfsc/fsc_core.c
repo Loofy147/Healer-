@@ -4,17 +4,25 @@
  *
  * PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
  * COMMERCIAL LICENSE: Required for proprietary/enterprise use.
+ *
+ * PATENT PENDING: Industrial applications of these algebraic primitives
+ * for database pages, kernel block devices, and network protocols.
  */
 
 #include "libfsc.h"
+#include <string.h>
 
+/**
+ * Extended Euclidean Algorithm for modular inverse.
+ */
 int64_t fsc_mod_inverse(int64_t a, int64_t m) {
-    if (m <= 1) return 0;
+    if (m == 1) return 0;
     int64_t m0 = m, t, q;
     int64_t x0 = 0, x1 = 1;
+
+    if (a < 0) a = (a % m) + m;
     a %= m;
-    if (a < 0) a += m;
-    if (a == 0) return 0;
+
     while (a > 1) {
         if (m == 0) return 0;
         q = a / m;
@@ -57,12 +65,10 @@ uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict w
             sum_others += (__int128_t)data[i] * weights[i];
         }
     } else {
-        uint64_t sum = 0;
         for (size_t i = 0; i < n; i++) {
             if (i == corrupted_idx) continue;
-            sum += data[i];
+            sum_others += data[i];
         }
-        sum_others = (int64_t)sum;
     }
 
     if (modulus > 0) {
@@ -73,7 +79,7 @@ uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict w
         int64_t w_j = weights ? (int32_t)weights[corrupted_idx] : 1;
         int64_t inv_w = fsc_mod_inverse((int64_t)(w_j % modulus), modulus);
         __int128_t res = (__int128_t)rhs * inv_w;
-        return (uint8_t)((res % modulus) % 256);
+        return (uint8_t)(res % modulus);
     } else {
         int64_t w_j = weights ? (int64_t)weights[corrupted_idx] : 1;
         return (uint8_t)((target - (int64_t)sum_others) / w_j);
@@ -248,9 +254,6 @@ size_t fsc_batch_verify_model5(const uint8_t* restrict data, size_t n_blocks, si
         const uint8_t* block = data + (b * block_size);
         __int128_t s1 = 0, s2 = 0, s3 = 0;
 
-        // Model 5 verification loop for 3 constraints
-        // weights: w_i = i+1, w2_i = (i+1)^2
-        // Bolt: Optimized for cache and SIMD by using __int128 accumulators
         for (size_t i = 0; i < block_size; i++) {
             __int128_t v = block[i];
             __int128_t w1 = (int64_t)(i + 1);
@@ -273,6 +276,178 @@ size_t fsc_batch_verify_model5(const uint8_t* restrict data, size_t n_blocks, si
         }
     }
     return count;
+}
+
+/**
+ * fsc_block_seal: Calculates the 3 internal Model 5 parity bytes.
+ */
+int fsc_block_seal(uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus) {
+    size_t n = block_size;
+    size_t d_len = n - 3;
+    int64_t t[3] = { block_id % modulus, (block_id * 7) % modulus, (block_id * 13) % modulus };
+
+    __int128_t s[3] = {0, 0, 0};
+    for (size_t i = 0; i < d_len; i++) {
+        __int128_t v = block[i];
+        __int128_t w = (i + 1);
+        s[0] += v;
+        s[1] += v * w;
+        s[2] += v * w * w;
+    }
+
+    __int128_t rhs[3];
+    for(int i=0; i<3; i++) {
+        rhs[i] = (t[i] - (s[i] % modulus)) % modulus;
+        if (rhs[i] < 0) rhs[i] += modulus;
+    }
+
+    __int128_t M[3][4];
+    for (int i = 0; i < 3; i++) {
+        M[i][3] = rhs[i];
+        for (int ki = 0; ki < 3; ki++) {
+            size_t w_idx = n - 2 + ki;
+            __int128_t weight = 1;
+            for (int p = 0; p < i; p++) weight = (weight * w_idx) % modulus;
+            M[i][ki] = weight;
+        }
+    }
+
+    for (int col = 0; col < 3; col++) {
+        int pivot = col;
+        while (pivot < 3 && M[pivot][col] == 0) pivot++;
+        if (pivot == 3) return FSC_ERR_SINGULAR;
+        if (pivot != col) {
+            for (int k = col; k <= 3; k++) {
+                __int128_t tmp = M[col][k]; M[col][k] = M[pivot][k]; M[pivot][k] = tmp;
+            }
+        }
+        int64_t inv_piv = fsc_mod_inverse((int64_t)M[col][col], modulus);
+        for (int k = col; k <= 3; k++) M[col][k] = (M[col][k] * inv_piv) % modulus;
+        for (int row = 0; row < 3; row++) {
+            if (row != col && M[row][col] != 0) {
+                __int128_t factor = M[row][col];
+                for (int k = col; k <= 3; k++) {
+                    M[row][k] = (M[row][k] - (factor * M[col][k]) % modulus) % modulus;
+                    if (M[row][k] < 0) M[row][k] += modulus;
+                }
+            }
+        }
+    }
+    for (int ki = 0; ki < 3; ki++) block[n - 3 + ki] = (uint8_t)(M[ki][3] % 256);
+    return FSC_SUCCESS;
+}
+
+/**
+ * fsc_heal_erasure8: Optimized Multi-block recovery using pre-inverted system matrix.
+ */
+int fsc_heal_erasure8(uint8_t* restrict volume_data, size_t n_blocks, size_t block_size,
+                     size_t k_parity, size_t n_lost, const size_t* restrict bad_indices,
+                     int64_t modulus) {
+    if (n_lost == 0) return FSC_SUCCESS;
+    if (n_lost > k_parity || n_lost > FSC_MAX_K) return FSC_ERR_BOUNDS;
+
+    size_t n_data_blocks = n_blocks - k_parity;
+    size_t chunk_size = block_size - 3;
+    __int128_t A_inv[FSC_MAX_K][FSC_MAX_K];
+    __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
+
+    // 1. Build the system matrix A and invert it
+    // A[j][ki] = (bad_indices[ki] + 1)^j if bad_indices[ki] < n_data_blocks
+    // else A[j][ki] = -1 if (bad_indices[ki] - n_data_blocks == j) else 0
+    for (size_t j = 0; j < n_lost; j++) {
+        for (size_t ki = 0; ki < n_lost; ki++) {
+            size_t bi = bad_indices[ki];
+            if (bi < n_data_blocks) {
+                __int128_t weight = 1;
+                for (size_t p = 0; p < j; p++) weight = (weight * (bi + 1)) % modulus;
+                M[j][ki] = weight;
+            } else {
+                M[j][ki] = (bi - n_data_blocks == j) ? -1 : 0;
+                if (M[j][ki] < 0) M[j][ki] += modulus;
+            }
+        }
+        // Identity on the right for inversion
+        for (size_t ki = 0; ki < n_lost; ki++) M[j][n_lost + ki] = (j == ki) ? 1 : 0;
+    }
+
+    // Gaussian with multiple RHS (Identity)
+    size_t system_size = n_lost;
+    for (size_t col = 0; col < system_size; col++) {
+        size_t pivot = col;
+        while (pivot < system_size && M[pivot][col] == 0) pivot++;
+        if (pivot == system_size) return FSC_ERR_SINGULAR;
+        if (pivot != col) {
+            for (size_t k = col; k < system_size + system_size; k++) {
+                __int128_t tmp = M[col][k]; M[col][k] = M[pivot][k]; M[pivot][k] = tmp;
+            }
+        }
+        int64_t inv_piv = fsc_mod_inverse((int64_t)M[col][col], modulus);
+        for (size_t k = col; k < system_size + system_size; k++) M[col][k] = (M[col][k] * inv_piv) % modulus;
+        for (size_t row = 0; row < system_size; row++) {
+            if (row != col && M[row][col] != 0) {
+                __int128_t factor = M[row][col];
+                for (size_t k = col; k < system_size + system_size; k++) {
+                    M[row][k] = (M[row][k] - (factor * M[col][k]) % modulus) % modulus;
+                    if (M[row][k] < 0) M[row][k] += modulus;
+                }
+            }
+        }
+    }
+    // Store inverted matrix
+    for (size_t i = 0; i < n_lost; i++) {
+        for (size_t j = 0; j < n_lost; j++) {
+            A_inv[i][j] = M[i][n_lost + j];
+        }
+    }
+
+    // 2. Vectorized solve for each byte offset
+    for (size_t col = 0; col < chunk_size; col++) {
+        __int128_t syndromes[FSC_MAX_K];
+        for (size_t j = 0; j < n_lost; j++) {
+            __int128_t sum_good = 0;
+            for (size_t bi = 0; bi < n_data_blocks; bi++) {
+                int is_bad = 0;
+                for (size_t ki = 0; ki < n_lost; ki++) if (bad_indices[ki] == bi) { is_bad = 1; break; }
+                if (is_bad) continue;
+
+                uint8_t val = volume_data[bi * block_size + col];
+                __int128_t weight = 1;
+                for (size_t p = 0; p < j; p++) weight = (weight * (bi + 1)) % modulus;
+                sum_good = (sum_good + (__int128_t)val * weight) % modulus;
+            }
+
+            size_t p_idx = n_data_blocks + j;
+            int is_parity_bad = 0;
+            for (size_t ki = 0; ki < n_lost; ki++) if (bad_indices[ki] == p_idx) { is_parity_bad = 1; break; }
+
+            __int128_t rhs = 0;
+            if (!is_parity_bad) {
+                uint8_t p_val = volume_data[p_idx * block_size + col];
+                rhs = (p_val - sum_good) % modulus;
+            } else {
+                rhs = (-sum_good) % modulus;
+            }
+            if (rhs < 0) rhs += modulus;
+            syndromes[j] = rhs;
+        }
+
+        // x = A_inv * syndromes
+        for (size_t ki = 0; ki < n_lost; ki++) {
+            __int128_t res = 0;
+            for (size_t j = 0; j < n_lost; j++) {
+                res = (res + A_inv[ki][j] * syndromes[j]) % modulus;
+            }
+            volume_data[bad_indices[ki] * block_size + col] = (uint8_t)(res % 256);
+        }
+    }
+
+    // 3. Reseal internal Model 5 parity
+    for (size_t ki = 0; ki < n_lost; ki++) {
+        size_t bi = bad_indices[ki];
+        fsc_block_seal(volume_data + (bi * block_size), block_size, (int64_t)bi, modulus);
+    }
+
+    return FSC_SUCCESS;
 }
 
 void fsc_buffer_seal(FSCBuffer* b) {
