@@ -7,19 +7,22 @@ import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
 from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
     Represents a physical storage sector with internal FSC protection.
     Uses 3-constraint Model 5 for robust intra-sector healing.
     """
-    def __init__(self, block_id: int, size: int = 512, m: int = 251):
+    def __init__(self, block_id: int, size: int = 512, m: int = 251, data: np.ndarray = None):
         self.block_id = block_id
         self.size = size
         self.m = m
         self.data_len = size - 3
-        self.data = np.zeros(size, dtype=np.uint8)
+        if data is not None:
+            self.data = data
+        else:
+            self.data = np.zeros(size, dtype=np.uint8)
         self.w = np.arange(1, size + 1, dtype=np.int64)
         self.w2 = self.w ** 2
 
@@ -46,14 +49,10 @@ class FSCBlock:
         t1, t2, t3 = self.block_id % self.m, (self.block_id * 7) % self.m, (self.block_id * 13) % self.m
         d = self.data[:self.data_len].astype(np.int64)
 
-        # Invariants for the data portion
-        # Bolt: Avoid double-calculation by using manual sum/dot
         s_d = int(np.sum(d) % self.m)
         sw_d = int(np.dot(d, self._w_data) % self.m)
         sw2_d = int(np.dot(d, self._w2_data) % self.m)
 
-        # Residues to be satisfied by the 3 parity bytes
-        # Manual 3x3 modular multiplication to avoid NumPy overhead for tiny matrices
         b1, b2, b3 = (t1 - s_d) % self.m, (t2 - sw_d) % self.m, (t3 - sw2_d) % self.m
 
         inv = self._A_inv
@@ -66,8 +65,8 @@ class FSCBlock:
         self.data[self.size - 1] = int(p3)
 
     def verify(self) -> bool:
-        # Bolt Optimization: Avoid copy/re-slice if possible
         d = self.data.astype(np.int64)
+        # Bolt: Modular arithmetic on int64 to avoid overflow before modulo
         return (int(np.sum(d) % self.m) == self.block_id % self.m and
                 int(np.dot(d, self.w) % self.m) == (self.block_id * 7) % self.m and
                 int(np.dot(d, self.w2) % self.m) == (self.block_id * 13) % self.m)
@@ -75,9 +74,7 @@ class FSCBlock:
     def heal(self) -> bool:
         n, m = self.size, self.m
         d = self.data.astype(np.int64)
-        # Calculate actual sums
         s1, s2, s3 = int(np.sum(d) % m), int(np.dot(d, self.w) % m), int(np.dot(d, self.w2) % m)
-        # Expected targets
         t1, t2, t3 = self.block_id % m, (self.block_id * 7) % m, (self.block_id * 13) % m
 
         if s1 == t1 and s2 == t2 and s3 == t3: return True
@@ -85,10 +82,8 @@ class FSCBlock:
         syn1, syn2, syn3 = (s1 - t1) % m, (s2 - t2) % m, (s3 - t3) % m
         if syn1 == 0: return False
         try:
-            # Single fault localization: w_idx = syn2 / syn1
             w_idx = (syn2 * gf_inv(syn1, m)) % m
             if w_idx == 0 or w_idx > n: return False
-            # Consistency check with second-order syndrome
             if (w_idx * syn2) % m != syn3: return False
 
             idx = int(w_idx - 1)
@@ -127,30 +122,25 @@ class FSCVolume:
         """
         internal_healed = 0
         bad = []
-        for i, b in enumerate(self.blocks):
-            # Bolt Optimization: merge verify and heal to avoid double syndrome calculation
-            d = b.data.astype(np.int64)
-            s1, s2, s3 = int(np.sum(d) % b.m), int(np.dot(d, b.w) % b.m), int(np.dot(d, b.w2) % b.m)
-            t1, t2, t3 = b.block_id % b.m, (b.block_id * 7) % b.m, (b.block_id * 13) % b.m
 
-            if s1 == t1 and s2 == t2 and s3 == t3:
-                continue
+        # Optimization: if native is available, batch verify all blocks
+        if is_native_available():
+            all_raw = np.vstack([b.data for b in self.blocks])
+            bad_indices = native_batch_verify_model5(all_raw, self.n_blocks, self.block_size, self.m)
 
-            # Try internal healing
-            syn1, syn2, syn3 = (s1 - t1) % b.m, (s2 - t2) % b.m, (s3 - t3) % b.m
-            healed = False
-            if syn1 != 0:
-                try:
-                    w_idx = (syn2 * gf_inv(syn1, b.m)) % b.m
-                    if 0 < w_idx <= b.size and (w_idx * syn2) % b.m == syn3:
-                        idx = int(w_idx - 1)
-                        b.data[idx] = (int(b.data[idx]) - syn1) % 256
-                        internal_healed += 1
-                        healed = True
-                except (ValueError, ZeroDivisionError): pass
-
-            if not healed:
-                bad.append(i)
+            remaining_bad = []
+            for bi in bad_indices:
+                if self.blocks[bi].heal():
+                    internal_healed += 1
+                else:
+                    remaining_bad.append(bi)
+            bad = remaining_bad
+        else:
+            for i, b in enumerate(self.blocks):
+                was_valid = b.verify()
+                if not was_valid:
+                    if b.heal(): internal_healed += 1
+                    else: bad.append(i)
 
         if not bad: return internal_healed
         if len(bad) > self.k_parity: return -1

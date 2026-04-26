@@ -79,6 +79,13 @@ int fsc_heal_multi8(uint8_t* data, const int32_t* weights, size_t n_data,
                    size_t k_faults, const size_t* corrupted_indices);
 
 /**
+ * fsc_batch_verify_model5: Efficiently verifies multiple blocks using Model 5.
+ * Returns number of corrupted blocks found. corrupted_indices will be filled with block IDs.
+ */
+size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t block_size,
+                             int64_t modulus, size_t* corrupted_indices);
+
+/**
  * fsc_mod_inverse: Extended Euclidean Algorithm.
  */
 int64_t fsc_mod_inverse(int64_t a, int64_t m);

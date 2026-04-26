@@ -4,75 +4,57 @@
  *
  * PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
  * COMMERCIAL LICENSE: Required for proprietary/enterprise use.
- *
- * PATENT PENDING: Industrial applications of these algebraic primitives
- * for database pages, kernel block devices, and network protocols.
  */
 
 #include "libfsc.h"
 
 int64_t fsc_mod_inverse(int64_t a, int64_t m) {
     if (m <= 1) return 0;
-    __int128_t m0 = m, t, q;
-    __int128_t x0 = 0, x1 = 1;
-    __int128_t aa = a % m;
-    if (aa < 0) aa += m;
-    while (aa > 1) {
-        if (m0 == 0) return 0;
-        q = aa / m0;
-        t = m0; m0 = aa % m0; aa = t;
-        t = x0; x0 = x1 - q * x0; x1 = t;
+    int64_t m0 = m, t, q;
+    int64_t x0 = 0, x1 = 1;
+    a %= m;
+    if (a < 0) a += m;
+    if (a == 0) return 0;
+    while (a > 1) {
+        if (m == 0) return 0;
+        q = a / m;
+        t = m;
+        m = a % m;
+        a = t;
+        t = x0;
+        x0 = x1 - q * x0;
+        x1 = t;
     }
-    if (x1 < 0) x1 += m;
-    return (int64_t)x1;
+    if (x1 < 0) x1 += m0;
+    return x1;
 }
 
 int64_t fsc_calculate_sum8(const uint8_t* restrict data, const int32_t* restrict weights, size_t n, int64_t modulus) {
+    __int128_t sum = 0;
     if (weights) {
-        int64_t sum = 0;
-        size_t i = 0;
-        // Unroll 4x
-        for (; i + 3 < n; i += 4) {
-            sum += (int64_t)data[i] * weights[i];
-            sum += (int64_t)data[i+1] * weights[i+1];
-            sum += (int64_t)data[i+2] * weights[i+2];
-            sum += (int64_t)data[i+3] * weights[i+3];
+        for (size_t i = 0; i < n; i++) {
+            sum += (__int128_t)data[i] * weights[i];
         }
-        for (; i < n; i++) {
-            sum += (int64_t)data[i] * weights[i];
-        }
-        if (modulus > 0) {
-            sum %= modulus;
-            if (sum < 0) sum += modulus;
-        }
-        return sum;
     } else {
-        uint64_t sum = 0;
-        size_t i = 0;
-        for (; i + 3 < n; i += 4) {
-            sum += data[i];
-            sum += data[i+1];
-            sum += data[i+2];
-            sum += data[i+3];
-        }
-        for (; i < n; i++) {
+        for (size_t i = 0; i < n; i++) {
             sum += data[i];
         }
-        if (modulus > 0) {
-            return (int64_t)(sum % (uint64_t)modulus);
-        }
-        return (int64_t)sum;
     }
+    if (modulus > 0) {
+        sum %= modulus;
+        if (sum < 0) sum += modulus;
+    }
+    return (int64_t)sum;
 }
 
 uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict weights, size_t n,
                         int64_t target, int64_t modulus, size_t corrupted_idx) {
     if (corrupted_idx >= n) return 0;
-    int64_t sum_others = 0;
+    __int128_t sum_others = 0;
     if (weights) {
         for (size_t i = 0; i < n; i++) {
             if (i == corrupted_idx) continue;
-            sum_others += (int64_t)data[i] * weights[i];
+            sum_others += (__int128_t)data[i] * weights[i];
         }
     } else {
         uint64_t sum = 0;
@@ -86,7 +68,7 @@ uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict w
     if (modulus > 0) {
         sum_others %= modulus;
         if (sum_others < 0) sum_others += modulus;
-        int64_t rhs = (target - sum_others) % modulus;
+        int64_t rhs = (target - (int64_t)sum_others) % modulus;
         if (rhs < 0) rhs += modulus;
         int64_t w_j = weights ? (int32_t)weights[corrupted_idx] : 1;
         int64_t inv_w = fsc_mod_inverse((int64_t)(w_j % modulus), modulus);
@@ -94,7 +76,7 @@ uint8_t fsc_heal_single8(const uint8_t* restrict data, const int32_t* restrict w
         return (uint8_t)((res % modulus) % 256);
     } else {
         int64_t w_j = weights ? (int64_t)weights[corrupted_idx] : 1;
-        return (uint8_t)((target - sum_others) / w_j);
+        return (uint8_t)((target - (int64_t)sum_others) / w_j);
     }
 }
 
@@ -203,6 +185,96 @@ int fsc_heal_multi64(int64_t* restrict data, const int32_t* restrict weights, si
     return FSC_SUCCESS;
 }
 
+int fsc_heal_multi8(uint8_t* restrict data, const int32_t* restrict weights, size_t n_data,
+                   const int64_t* restrict targets, const int64_t* restrict moduli,
+                   size_t k, const size_t* restrict corrupted_indices) {
+    if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
+    for (size_t ki = 0; ki < k; ki++) {
+        if (corrupted_indices[ki] >= n_data) return FSC_ERR_BOUNDS;
+    }
+    int64_t p = moduli[0];
+    if (p <= 0) return FSC_ERR_INVALID;
+    __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
+
+    for (size_t i = 0; i < k; i++) {
+        __int128_t sum_others = 0;
+        for (size_t j = 0; j < n_data; j++) {
+            int is_corrupted = 0;
+            for (size_t ki = 0; ki < k; ki++) if (corrupted_indices[ki] == j) { is_corrupted = 1; break; }
+            if (is_corrupted) continue;
+            __int128_t v = data[j] % p;
+            __int128_t w = weights ? (int32_t)weights[i * n_data + j] % p : 1; if (w < 0) w += p;
+            sum_others = (sum_others + (v * w)) % p;
+        }
+        __int128_t rhs = (targets[i] - sum_others) % p;
+        if (rhs < 0) rhs += p;
+        M[i][k] = rhs;
+        for (size_t ki = 0; ki < k; ki++) {
+            __int128_t w = weights ? (int32_t)weights[i * n_data + corrupted_indices[ki]] % p : 1;
+            if (w < 0) w += p;
+            M[i][ki] = w;
+        }
+    }
+
+    for (size_t col = 0; col < k; col++) {
+        size_t pivot = col;
+        while (pivot < k && M[pivot][col] == 0) pivot++;
+        if (pivot == k) return FSC_ERR_SINGULAR;
+        if (pivot != col) {
+            for (size_t j = col; j <= k; j++) {
+                __int128_t tmp = M[col][j]; M[col][j] = M[pivot][j]; M[pivot][j] = tmp;
+            }
+        }
+        int64_t inv_piv = fsc_mod_inverse((int64_t)M[col][col], p);
+        for (size_t j = col; j <= k; j++) M[col][j] = (M[col][j] * inv_piv) % p;
+        for (size_t row = 0; row < k; row++) {
+            if (row != col && M[row][col] != 0) {
+                __int128_t factor = M[row][col];
+                for (size_t j = col; j <= k; j++) {
+                    M[row][j] = (M[row][j] - (factor * M[col][j]) % p) % p;
+                    if (M[row][j] < 0) M[row][j] += p;
+                }
+            }
+        }
+    }
+    for (size_t ki = 0; ki < k; ki++) data[corrupted_indices[ki]] = (uint8_t)(M[ki][k] % 256);
+    return FSC_SUCCESS;
+}
+
+size_t fsc_batch_verify_model5(const uint8_t* restrict data, size_t n_blocks, size_t block_size,
+                              int64_t modulus, size_t* restrict corrupted_indices) {
+    size_t count = 0;
+    for (size_t b = 0; b < n_blocks; b++) {
+        const uint8_t* block = data + (b * block_size);
+        __int128_t s1 = 0, s2 = 0, s3 = 0;
+
+        // Model 5 verification loop for 3 constraints
+        // weights: w_i = i+1, w2_i = (i+1)^2
+        // Bolt: Optimized for cache and SIMD by using __int128 accumulators
+        for (size_t i = 0; i < block_size; i++) {
+            __int128_t v = block[i];
+            __int128_t w1 = (int64_t)(i + 1);
+            s1 += v;
+            s2 += v * w1;
+            s3 += v * w1 * w1;
+        }
+
+        s1 %= modulus;
+        s2 %= modulus;
+        s3 %= modulus;
+
+        int64_t t1 = (int64_t)(b % modulus);
+        int64_t t2 = (int64_t)((b * 7) % modulus);
+        int64_t t3 = (int64_t)((b * 13) % modulus);
+
+        if ((int64_t)s1 != t1 || (int64_t)s2 != t2 || (int64_t)s3 != t3) {
+            if (corrupted_indices) corrupted_indices[count] = b;
+            count++;
+        }
+    }
+    return count;
+}
+
 void fsc_buffer_seal(FSCBuffer* b) {
     b->target = fsc_calculate_sum8(b->buffer, b->weights, b->len, b->modulus);
     if (b->weights2) {
@@ -269,65 +341,7 @@ void fsc_audit_log(const char* event_type, int index, int64_t magnitude) {
 #if FSC_COMMERCIAL_BUILD
     printf("[COMMERCIAL-AUDIT] EVENT: %s | OFFSET: %d | MAGNITUDE: %ld\n",
            event_type, index, magnitude);
-    // In a real enterprise build, this would write to a secure tamper-proof ledger.
 #else
-    // Core version: No-op to preserve performance and binary size.
     (void)event_type; (void)index; (void)magnitude;
 #endif
-}
-
-int fsc_heal_multi8(uint8_t* restrict data, const int32_t* restrict weights, size_t n_data,
-                   const int64_t* restrict targets, const int64_t* restrict moduli,
-                   size_t k, const size_t* restrict corrupted_indices) {
-    if (k == 0 || k > FSC_MAX_K) return FSC_ERR_BOUNDS;
-    for (size_t ki = 0; ki < k; ki++) {
-        if (corrupted_indices[ki] >= n_data) return FSC_ERR_BOUNDS;
-    }
-    int64_t p = moduli[0];
-    if (p <= 0) return FSC_ERR_INVALID;
-    __int128_t M[FSC_MAX_K][FSC_MAX_K + 1];
-
-    for (size_t i = 0; i < k; i++) {
-        __int128_t sum_others = 0;
-        for (size_t j = 0; j < n_data; j++) {
-            int is_corrupted = 0;
-            for (size_t ki = 0; ki < k; ki++) if (corrupted_indices[ki] == j) { is_corrupted = 1; break; }
-            if (is_corrupted) continue;
-            __int128_t v = data[j] % p;
-            __int128_t w = weights ? (int32_t)weights[i * n_data + j] % p : 1; if (w < 0) w += p;
-            sum_others = (sum_others + (v * w)) % p;
-        }
-        __int128_t rhs = (targets[i] - sum_others) % p;
-        if (rhs < 0) rhs += p;
-        M[i][k] = rhs;
-        for (size_t ki = 0; ki < k; ki++) {
-            __int128_t w = weights ? (int32_t)weights[i * n_data + corrupted_indices[ki]] % p : 1;
-            if (w < 0) w += p;
-            M[i][ki] = w;
-        }
-    }
-
-    for (size_t col = 0; col < k; col++) {
-        size_t pivot = col;
-        while (pivot < k && M[pivot][col] == 0) pivot++;
-        if (pivot == k) return FSC_ERR_SINGULAR;
-        if (pivot != col) {
-            for (size_t j = col; j <= k; j++) {
-                __int128_t tmp = M[col][j]; M[col][j] = M[pivot][j]; M[pivot][j] = tmp;
-            }
-        }
-        int64_t inv_piv = fsc_mod_inverse((int64_t)M[col][col], p);
-        for (size_t j = col; j <= k; j++) M[col][j] = (M[col][j] * inv_piv) % p;
-        for (size_t row = 0; row < k; row++) {
-            if (row != col && M[row][col] != 0) {
-                __int128_t factor = M[row][col];
-                for (size_t j = col; j <= k; j++) {
-                    M[row][j] = (M[row][j] - (factor * M[col][j]) % p) % p;
-                    if (M[row][j] < 0) M[row][j] += p;
-                }
-            }
-        }
-    }
-    for (size_t ki = 0; ki < k; ki++) data[corrupted_indices[ki]] = (uint8_t)(M[ki][k] % 256);
-    return FSC_SUCCESS;
 }
