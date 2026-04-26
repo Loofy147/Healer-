@@ -7,7 +7,7 @@ import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
 from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -19,10 +19,8 @@ class FSCBlock:
         self.size = size
         self.m = m
         self.data_len = size - 3
-        if data is not None:
-            self.data = data
-        else:
-            self.data = np.zeros(size, dtype=np.uint8)
+        self.data = data if data is not None else np.zeros(size, dtype=np.uint8)
+
         self.w = np.arange(1, size + 1, dtype=np.int64)
         self.w2 = self.w ** 2
 
@@ -66,7 +64,6 @@ class FSCBlock:
 
     def verify(self) -> bool:
         d = self.data.astype(np.int64)
-        # Bolt: Modular arithmetic on int64 to avoid overflow before modulo
         return (int(np.sum(d) % self.m) == self.block_id % self.m and
                 int(np.dot(d, self.w) % self.m) == (self.block_id * 7) % self.m and
                 int(np.dot(d, self.w2) % self.m) == (self.block_id * 13) % self.m)
@@ -89,7 +86,7 @@ class FSCBlock:
             idx = int(w_idx - 1)
             self.data[idx] = (int(self.data[idx]) - syn1) % 256
             return True
-        except (ValueError, ZeroDivisionError): return False
+        except (ValueError, ZeroDivisionError, TypeError): return False
 
 class FSCVolume:
     """
@@ -98,19 +95,26 @@ class FSCVolume:
     def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2):
         self.n_blocks, self.block_size, self.k_parity = n_blocks, block_size, k_parity
         self.n_data_blocks = n_blocks - k_parity
-        self.blocks = [FSCBlock(i, block_size) for i in range(n_blocks)]
         self.m = 251
+
+        # Bolt Optimization: Single contiguous buffer for all blocks to enable zero-copy C operations
+        self.data_buffer = np.zeros(n_blocks * block_size, dtype=np.uint8)
+        self.blocks = []
+        for i in range(n_blocks):
+            # Create a view into the main buffer
+            block_view = self.data_buffer[i * block_size : (i + 1) * block_size]
+            self.blocks.append(FSCBlock(i, block_size, self.m, data=block_view))
 
     def write_volume(self, data: bytes):
         chunk_size = self.blocks[0].data_len
-        # Bolt Optimization: Fully vectorized parity computation using NumPy matrix multiplication
-        all_data = np.zeros((self.n_data_blocks, chunk_size), dtype=np.int64)
+        # Vectorized parity computation using NumPy matrix multiplication
+        all_data_payloads = np.zeros((self.n_data_blocks, chunk_size), dtype=np.int64)
         for i in range(self.n_data_blocks):
             self.blocks[i].write(data[i*chunk_size : (i+1)*chunk_size])
-            all_data[i] = self.blocks[i].data[:chunk_size]
+            all_data_payloads[i] = self.blocks[i].data[:chunk_size]
 
         powers_matrix = np.array([[pow(i + 1, j, self.m) for i in range(self.n_data_blocks)] for j in range(self.k_parity)], dtype=np.int64)
-        parity_payloads = (powers_matrix @ all_data) % self.m
+        parity_payloads = (powers_matrix @ all_data_payloads) % self.m
 
         for j in range(self.k_parity):
             p_idx = self.n_data_blocks + j
@@ -123,22 +127,26 @@ class FSCVolume:
         internal_healed = 0
         bad = []
 
-        # Optimization: if native is available, batch verify all blocks
         if is_native_available():
-            all_raw = np.vstack([b.data for b in self.blocks])
-            bad_indices = native_batch_verify_model5(all_raw, self.n_blocks, self.block_size, self.m)
+            # data_buffer is already contiguous
+            bad_indices = native_batch_verify_model5(self.data_buffer, self.n_blocks, self.block_size, self.m)
 
             remaining_bad = []
             for bi in bad_indices:
                 if self.blocks[bi].heal():
                     internal_healed += 1
                 else:
-                    remaining_bad.append(bi)
+                    remaining_bad.append(int(bi))
             bad = remaining_bad
+
+            if bad and len(bad) <= self.k_parity:
+                if native_heal_erasure8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, bad, self.m):
+                    return internal_healed + len(bad)
+                else:
+                    return -1
         else:
             for i, b in enumerate(self.blocks):
-                was_valid = b.verify()
-                if not was_valid:
+                if not b.verify():
                     if b.heal(): internal_healed += 1
                     else: bad.append(i)
 
@@ -146,10 +154,8 @@ class FSCVolume:
         if len(bad) > self.k_parity: return -1
 
         n_lost, d_len = len(bad), self.blocks[0].data_len
-        # Bolt Optimization: Vectorized cross-block healing using matrix inversion over GF(p)
         A = np.array([[pow(bi + 1, j, self.m) if bi < self.n_data_blocks else (-1 if (bi - self.n_data_blocks) == j else 0) for bi in bad] for j in range(n_lost)], dtype=np.int64)
 
-        # Pre-calculate the modular inverse of the system matrix A
         I = np.eye(n_lost, dtype=np.int64)
         A_inv_rows = []
         for j in range(n_lost):
@@ -158,7 +164,6 @@ class FSCVolume:
             A_inv_rows.append(row_sol)
         A_inv = np.array(A_inv_rows, dtype=np.int64).T
 
-        # Vectorized syndrome calculation (b_vec)
         all_d = np.array([b.data[:d_len] for b in self.blocks], dtype=np.int64)
         powers_matrix = np.array([[pow(i + 1, j, self.m) for i in range(self.n_data_blocks)] for j in range(n_lost)], dtype=np.int64)
 
@@ -166,7 +171,6 @@ class FSCVolume:
         for bi in bad:
             if bi < self.n_data_blocks: mask[bi] = False
 
-        # k_sum is the contribution of the remaining good data blocks to the syndromes
         k_sums = (powers_matrix[:, mask] @ all_d[:self.n_data_blocks][mask]) % self.m
 
         b_vec = np.zeros((n_lost, d_len), dtype=np.int64)
@@ -174,7 +178,6 @@ class FSCVolume:
             p_idx = self.n_data_blocks + j
             b_vec[j] = (all_d[p_idx] - k_sums[j]) % self.m if p_idx not in bad else (-k_sums[j]) % self.m
 
-        # Final vectorized solution: sol_matrix = A_inv @ b_vec (mod p)
         sol_matrix = (A_inv @ b_vec) % self.m
 
         for k, bi in enumerate(bad):

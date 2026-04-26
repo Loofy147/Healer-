@@ -10,11 +10,10 @@
  */
 
 /**
- * fsc_sqlite_shim.c - Illustrative integration for SQLite Pager
+ * fsc_sqlite_shim.c - Real-world B-Tree Page integration for SQLite Pager
  *
- * This shim demonstrates where libfsc would be injected into the
- * SQLite sqlite3PagerGet() logic to provide transparent healing.
- * Uses Model 5 (Dual Constraint) for automatic localization.
+ * This shim demonstrates protecting a realistic SQLite B-Tree page
+ * including internal pointers (child pointers) and header metadata.
  */
 
 #include <stdio.h>
@@ -24,10 +23,26 @@
 
 #define PAGE_SIZE 4096
 
+/* Realistic SQLite B-Tree Page Header */
+typedef struct {
+    uint8_t  flag;         /* 1: Leaf, 2: Interior */
+    uint16_t free_start;   /* Offset to start of free space */
+    uint16_t cell_count;   /* Number of cells on this page */
+    uint16_t cell_start;   /* Offset to start of cell content */
+    uint8_t  frag_count;   /* Fragmented free bytes */
+    uint32_t right_child;  /* Right child pointer (if interior) */
+} BTreeHeader;
+
 /* Mock SQLite Page structure */
 typedef struct {
-    int pgno;
-    unsigned char aData[PAGE_SIZE];
+    uint32_t pgno;
+    union {
+        unsigned char raw[PAGE_SIZE];
+        struct {
+            BTreeHeader header;
+            unsigned char payload[PAGE_SIZE - sizeof(BTreeHeader)];
+        } page;
+    } data;
     int64_t fsc_target1;
     int64_t fsc_target2;
 } PgHdr;
@@ -39,7 +54,7 @@ int32_t w2[PAGE_SIZE];
 /* Mock SQLite Pager function with FSC injection */
 int sqlite3PagerGet_fsc(PgHdr *pPage) {
     FSCBuffer b = {
-        .buffer = pPage->aData,
+        .buffer = pPage->data.raw,
         .len = PAGE_SIZE,
         .modulus = 2305843009213693951LL, // Mersenne Prime p=2^61-1
         .target = pPage->fsc_target1,
@@ -49,10 +64,10 @@ int sqlite3PagerGet_fsc(PgHdr *pPage) {
     };
 
     if (!fsc_buffer_verify(&b)) {
-        printf("[FSC] SQLite Page %d corruption detected. Attempting algebraic healing...\n", pPage->pgno);
+        printf("[FSC] SQLite Page %d corruption detected in B-Tree structure!\n", pPage->pgno);
         int healed_idx = fsc_buffer_heal(&b);
         if (healed_idx >= 0) {
-            printf("[FSC] Success: Page %d healed at offset %d.\n", pPage->pgno, healed_idx);
+            printf("[FSC] SUCCESS: Recovered corrupted field at offset %d.\n", healed_idx);
             return 0; // SQLITE_OK
         } else {
             return -1; // SQLITE_CORRUPT
@@ -69,12 +84,16 @@ int main() {
     }
 
     PgHdr page;
-    page.pgno = 1;
-    memset(page.aData, 'A', PAGE_SIZE);
+    memset(&page, 0, sizeof(page));
+    page.pgno = 123;
+    page.data.page.header.flag = 2; // Interior page
+    page.data.page.header.cell_count = 50;
+    page.data.page.header.right_child = 0xDEADBEEF;
+    memset(page.data.page.payload, 'D', sizeof(page.data.page.payload));
 
     // Seal the page with FSC
     FSCBuffer b = {
-        .buffer = page.aData,
+        .buffer = page.data.raw,
         .len = PAGE_SIZE,
         .modulus = 2305843009213693951LL,
         .weights = w1,
@@ -84,20 +103,22 @@ int main() {
     page.fsc_target1 = b.target;
     page.fsc_target2 = b.target2;
 
-    printf("--- SQLite FSC Shim Demo ---\n");
-    printf("Page %d initialized. FSC Targets: %ld, %ld\n", page.pgno, page.fsc_target1, page.fsc_target2);
+    printf("--- Realistic SQLite FSC Shim Demo ---\n");
+    printf("B-Tree Page %d initialized.\n", page.pgno);
+    printf("Internal Child Pointer: 0x%08X\n", page.data.page.header.right_child);
 
-    // Simulate corruption
-    printf("\n[CORRUPTION] Flipping bit in SQLite page data...\n");
-    unsigned char orig = page.aData[100];
-    page.aData[100] ^= 0xFF;
+    // Simulate corruption in a CRITICAL field (the child pointer)
+    printf("\n[CORRUPTION] Bit-flip in the Right Child pointer...\n");
+    uint32_t orig_ptr = page.data.page.header.right_child;
+    page.data.page.header.right_child ^= 0x01000000;
+    printf("Corrupted Pointer: 0x%08X\n", page.data.page.header.right_child);
 
     // Retrieve and heal
     if (sqlite3PagerGet_fsc(&page) == 0) {
-        if (page.aData[100] == orig) {
-            printf("RESULT: SQLite recovered bit-perfect data from the corrupted page.\n");
+        if (page.data.page.header.right_child == orig_ptr) {
+            printf("RESULT: Critical B-Tree pointer HEALED exactly. Database integrity preserved.\n");
         } else {
-            printf("RESULT: Healing reported success but data mismatch (Localization failure).\n");
+            printf("RESULT: Healing failed to restore the pointer.\n");
         }
     }
 
