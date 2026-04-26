@@ -26,3 +26,7 @@
 ## 2025-05-14 - [Vectorized Binary I/O Optimization]
 **Learning:** Python's `struct.pack` and `struct.unpack` in loops are significant bottlenecks for binary data processing. By switching to numpy vectorized operations for invariant computation and structured numpy arrays for binary I/O, `FSCWriter` and `FSCReader` throughput improved dramatically. For 10,000 records, total write time dropped from ~0.73s to ~0.08s (~9x speedup).
 **Action:** Use numpy structured dtypes and `frombuffer`/`tobytes` for high-throughput binary file formats instead of individual record packing.
+
+## 2026-04-26 - [Vectorized Polynomial FSC Optimization]
+**Learning:** The initial implementation of polynomial evaluation in FSC was calculating modular powers O(k) for every call, and using Python loops for summation, leading to significant overhead for large codewords.
+**Action:** Pre-compute modular powers and their inverses within the closure of the factory method. Use NumPy's vectorized `@` operator for sum-product calculations, which moves the heavy lifting to native code and achieves >10x speedup for 100-element codewords.

@@ -113,16 +113,21 @@ class FSCFactory:
 
     @staticmethod
     def polynomial_eval(name: str, k: int, p: int, eval_point: int) -> FSCDescriptor:
+        # Bolt Optimization: Pre-compute powers and their modular inverses to avoid O(k) overhead per call.
+        # Uses vectorized NumPy @ operator for O(k) sum-product in native code.
+        powers = np.array([pow(int(eval_point), i, p) for i in range(k)], dtype=np.int64)
+        powers_inv = np.array([pow(int(p_val), -1, p) for p_val in powers], dtype=np.int64)
+
         def inv(coeffs):
-            c_np = np.array(coeffs, dtype=np.int64)
-            powers = np.array([pow(int(eval_point), i, p) for i in range(len(coeffs))], dtype=np.int64)
-            return int(np.sum((c_np * powers) % p) % p)
+            c_np = np.asarray(coeffs, dtype=np.int64)
+            return int((c_np @ powers) % p)
+
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
-            powers = np.array([pow(int(eval_point), j, p) for j in range(len(g))], dtype=np.int64)
-            others = (np.sum((g_np * powers) % p) - (g_np[i] * powers[i]) % p) % p
-            return int(((S - others) * pow(int(powers[i]), -1, p)) % p)
-        return FSCDescriptor(name, f'GF({p})', k, inv, rec, (p.bit_length() + 7) // 8)
+            g_np = np.asarray(g, dtype=np.int64)
+            total = (g_np @ powers) % p
+            others = (total - (g_np[i] * powers[i]) % p) % p
+            return int(((S - others) * powers_inv[i]) % p)
+        return FSCDescriptor(name, f"GF({p})", k, inv, rec, (p.bit_length() + 7) // 8)
 
 class ContinuityQuadraticHealer:
     """
