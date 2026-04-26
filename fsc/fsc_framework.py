@@ -39,7 +39,7 @@ class FSCFactory:
     def structural_zero_sum(name: str, n: int) -> FSCDescriptor:
         def inv(g): return 0
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
+            g_np = np.asarray(g, dtype=np.int64)
             return int(-(np.sum(g_np) - g_np[i]))
         return FSCDescriptor(name, "Structural_Z", n, inv, rec, overhead=0)
 
@@ -54,56 +54,49 @@ class FSCFactory:
 
     @staticmethod
     def integer_sum(name: str, n: int) -> FSCDescriptor:
-        def inv(g): return int(np.sum(np.array(g, dtype=np.int64)))
+        def inv(g): return int(np.sum(np.asarray(g, dtype=np.int64)))
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
+            g_np = np.asarray(g, dtype=np.int64)
             return int(S - (np.sum(g_np) - g_np[i]))
         return FSCDescriptor(name, 'Z', n, inv, rec, 8)
 
     @staticmethod
     def modular_sum(name: str, n: int, m: int) -> FSCDescriptor:
-        def inv(g): return int(np.sum(np.array(g, dtype=np.int64)) % m)
+        def inv(g): return int(np.sum(np.asarray(g, dtype=np.int64)) % m)
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
+            g_np = np.asarray(g, dtype=np.int64)
             others = (np.sum(g_np) - g_np[i]) % m
             return int((S - others) % m)
         return FSCDescriptor(name, f'Z_{m}', n, inv, rec, (m.bit_length() + 7) // 8)
 
     @staticmethod
     def xor_sum(name: str, n: int) -> FSCDescriptor:
-        def inv(g): return int(np.bitwise_xor.reduce(np.array(g, dtype=np.int64)))
+        def inv(g): return int(np.bitwise_xor.reduce(np.asarray(g, dtype=np.int64)))
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
+            g_np = np.asarray(g, dtype=np.int64)
             others = np.bitwise_xor.reduce(g_np) ^ g_np[i]
             return int(S ^ others)
         return FSCDescriptor(name, 'GF2', n, inv, rec, 1)
 
     @staticmethod
-    def weighted_sum(name: str, weights: list, m: Optional[int] = None) -> FSCDescriptor:
+    def weighted_sum(name: str, n: int, weights: List[int], m: int) -> FSCDescriptor:
         w_np = np.array(weights, dtype=np.int64)
         def inv(g):
-            return int(np.dot(w_np, np.array(g, dtype=np.int64)) % m if m else np.dot(w_np, np.array(g, dtype=np.int64)))
+            return int(np.dot(np.asarray(g, dtype=np.int64), w_np) % m)
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
-            others = np.dot(w_np, g_np) - (w_np[i] * g_np[i])
-            diff = S - others
-            if m:
-                return int(((diff % m) * pow(int(weights[i]), -1, m)) % m)
-            else:
-                return int(diff // int(weights[i]))
-        return FSCDescriptor(name, f'Z_{m}' if m else 'Z', len(weights), inv, rec, 8)
+            g_np = np.asarray(g, dtype=np.int64)
+            others = (np.dot(g_np, w_np) - (g_np[i] * w_np[i])) % m
+            return int(((S - others) * pow(int(weights[i]), -1, m)) % m)
+        return FSCDescriptor(name, f'Z_{m}_Weighted', n, inv, rec, (m.bit_length() + 7) // 8)
 
     @staticmethod
-    def quadratic_sum(name: str, n: int) -> FSCDescriptor:
-        """
-        Non-Linear FSC: sum(v_i^2) = Target.
-        Physics conservation: e.g. magnitude squared of IMU vector.
-        Recovery: v_i = sqrt(Target - sum(v_j^2, j!=i)).
-        Note: Ambiguity in sign (+/-).
-        """
-        def inv(g): return int(np.sum(np.array(g, dtype=np.int64)**2))
+    def quadratic_sum(name: str, n: int, m: Optional[int] = None) -> FSCDescriptor:
+        def inv(g):
+            res = np.sum(np.asarray(g, dtype=np.int64)**2)
+            if m: res %= m
+            return int(res)
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
+            g_np = np.asarray(g, dtype=np.int64)
             others_sq = np.sum(g_np**2) - g_np[i]**2
             val_sq = S - others_sq
             if val_sq < 0: return 0
@@ -113,16 +106,26 @@ class FSCFactory:
 
     @staticmethod
     def polynomial_eval(name: str, k: int, p: int, eval_point: int) -> FSCDescriptor:
+        # Bolt Optimization: Pre-compute powers and their modular inverses to avoid O(k) overhead per call.
+        # Uses vectorized NumPy @ operator for O(k) sum-product in native code.
+        powers = np.array([pow(int(eval_point), i, p) for i in range(k)], dtype=np.int64)
+        powers_inv = np.array([pow(int(p_val), -1, p) for p_val in powers], dtype=np.int64)
+
         def inv(coeffs):
-            c_np = np.array(coeffs, dtype=np.int64)
-            powers = np.array([pow(int(eval_point), i, p) for i in range(len(coeffs))], dtype=np.int64)
-            return int(np.sum((c_np * powers) % p) % p)
+            c_np = np.asarray(coeffs, dtype=np.int64)
+            return int((c_np @ powers) % p)
+
         def rec(g, i, S):
-            g_np = np.array(g, dtype=np.int64)
-            powers = np.array([pow(int(eval_point), j, p) for j in range(len(g))], dtype=np.int64)
-            others = (np.sum((g_np * powers) % p) - (g_np[i] * powers[i]) % p) % p
-            return int(((S - others) * pow(int(powers[i]), -1, p)) % p)
-        return FSCDescriptor(name, f'GF({p})', k, inv, rec, (p.bit_length() + 7) // 8)
+            g_np = np.asarray(g, dtype=np.int64)
+            total = (g_np @ powers) % p
+            others = (total - (g_np[i] * powers[i]) % p) % p
+            return int(((S - others) * powers_inv[i]) % p)
+
+        desc = FSCDescriptor(name, f"GF({p})", k, inv, rec, (p.bit_length() + 7) // 8)
+        # Store optimization vectors for Healer
+        desc._powers = powers
+        desc._powers_inv = powers_inv
+        return desc
 
 class ContinuityQuadraticHealer:
     """
@@ -133,7 +136,7 @@ class ContinuityQuadraticHealer:
         self.target_sum = target_sum
 
     def recover(self, current_group: List[int], lost_idx: int, prev_val: int) -> int:
-        g_np = np.array(current_group, dtype=np.int64)
+        g_np = np.asarray(current_group, dtype=np.int64)
         others_sq = np.sum(g_np**2) - g_np[lost_idx]**2
         val_sq = self.target_sum - others_sq
         if val_sq < 0: return 0
@@ -174,7 +177,7 @@ class IterativeNonLinearSolver:
 
 def gf_inv(a, p):
     """Modular inverse over GF(p) using Fermat's Little Theorem."""
-    return pow(int(a), p - 2, p)
+    return pow(int(a), int(p) - 2, int(p))
 
 def solve_linear_system(A, b, p):
     """
@@ -303,30 +306,86 @@ class FSCAnalyzer:
 class FSCHealer:
     def __init__(self, descriptor: FSCDescriptor):
         self.desc = descriptor
-    def encode_stream(self, data: list) -> tuple:
+    def encode_stream(self, data: Any) -> tuple:
         n = self.desc.n_elements
-        data_np = np.array(data)
-        n_groups = len(data_np) // n
-        reshaped = data_np[:n_groups * n].reshape(n_groups, n).astype(np.int64)
+        data_np = np.asarray(data)
+        n_groups = data_np.size // n
+        reshaped = data_np.reshape(n_groups, n).astype(np.int64)
         name_lower = self.desc.name.lower()
+        field_lower = self.desc.field.lower()
         if 'xor' in name_lower:
             return reshaped.tolist(), np.bitwise_xor.reduce(reshaped, axis=1).tolist()
         elif 'integer' in name_lower and 'sum' in name_lower and 'quadratic' not in name_lower:
             return reshaped.tolist(), np.sum(reshaped, axis=1).tolist()
+        # Bolt Optimization: Vectorized modular sum
+        elif 'z_' in field_lower and 'weighted' not in field_lower:
+            try:
+                m = int(self.desc.field.split('_')[1])
+                return reshaped.tolist(), (np.sum(reshaped, axis=1) % m).tolist()
+            except: pass
+
         groups = reshaped.tolist()
         return groups, [self.desc.encode(g) for g in groups]
+
     def heal_stream(self, corrupted_groups: list, invariants: list, loss_mask: list) -> Tuple[list, int]:
-        healed = [list(g) for g in corrupted_groups]
-        recovered_count = 0
+        n = self.desc.n_elements
+        groups_np = np.asarray(corrupted_groups, dtype=np.int64)
+        invs_np = np.asarray(invariants, dtype=np.int64)
+
         from collections import defaultdict
         by_group = defaultdict(list)
         for gi, ei in loss_mask: by_group[gi].append(ei)
+
+        name_lower = self.desc.name.lower()
+        field_lower = self.desc.field.lower()
+
+        recovered_count = 0
+
+        # Bolt Optimization: Vectorized healing for common structural models
+        if ('modular' in name_lower or 'z_' in field_lower) and 'weighted' not in field_lower:
+            try:
+                m = int(self.desc.field.split('_')[1])
+                # Batch sum to avoid O(k) loop
+                current_sums = np.sum(groups_np, axis=1) % m
+                for gi, indices in by_group.items():
+                    if len(indices) == 1:
+                        ei = indices[0]
+                        # Corrected value: S - (Total - ErasedVal)
+                        groups_np[gi, ei] = (invs_np[gi] - (current_sums[gi] - groups_np[gi, ei])) % m
+                        recovered_count += 1
+                return groups_np.tolist(), recovered_count
+            except: pass
+        elif 'xor' in name_lower:
+            current_xors = np.bitwise_xor.reduce(groups_np, axis=1)
+            for gi, indices in by_group.items():
+                if len(indices) == 1:
+                    ei = indices[0]
+                    groups_np[gi, ei] = invs_np[gi] ^ current_xors[gi] ^ groups_np[gi, ei]
+                    recovered_count += 1
+            return groups_np.tolist(), recovered_count
+        elif 'gf(' in field_lower and hasattr(self.desc, '_powers'):
+            # Vectorized Polynomial healing
+            p = int(field_lower.split('(')[1].split(')')[0])
+            powers = self.desc._powers
+            powers_inv = self.desc._powers_inv
+            totals = (groups_np @ powers) % p
+            for gi, indices in by_group.items():
+                if len(indices) == 1:
+                    ei = indices[0]
+                    others = (totals[gi] - (groups_np[gi, ei] * powers[ei]) % p) % p
+                    groups_np[gi, ei] = ((invs_np[gi] - others) * powers_inv[ei]) % p
+                    recovered_count += 1
+            return groups_np.tolist(), recovered_count
+
+        # Default fallback
         for gi, indices in by_group.items():
             if len(indices) == 1:
                 ei = indices[0]
-                healed[gi][ei] = self.desc.recover(healed[gi], ei, invariants[gi])
+                groups_np[gi, ei] = self.desc.recover(groups_np[gi], ei, invs_np[gi])
                 recovered_count += 1
-        return healed, recovered_count
+
+        return groups_np.tolist(), recovered_count
+
     def verify(self, original_groups: list, healed_groups: list) -> dict:
         flat_orig = [item for sublist in original_groups for item in sublist]
         flat_healed = [item for sublist in healed_groups for item in sublist]

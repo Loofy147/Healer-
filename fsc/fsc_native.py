@@ -91,6 +91,16 @@ if _lib:
     ]
     _lib.fsc_heal_multi8.restype = ctypes.c_int
 
+    # size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t block_size, int64_t modulus, size_t* corrupted_indices)
+    _lib.fsc_batch_verify_model5.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_int64,
+        ctypes.POINTER(ctypes.c_size_t)
+    ]
+    _lib.fsc_batch_verify_model5.restype = ctypes.c_size_t
+
     # void fsc_audit_log(const char* event_type, int index, int64_t magnitude)
     _lib.fsc_audit_log.argtypes = [
         ctypes.c_char_p,
@@ -159,6 +169,13 @@ def native_heal_multi8(data: np.ndarray, weights: Optional[np.ndarray],
                                targets_ptr, moduli_ptr,
                                len(corrupted_indices), ci_array)
     return res == FSC_SUCCESS
+
+def native_batch_verify_model5(data: np.ndarray, n_blocks: int, block_size: int, modulus: int) -> List[int]:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    data_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    corrupted_array = (ctypes.c_size_t * n_blocks)()
+    count = _lib.fsc_batch_verify_model5(data_ptr, n_blocks, block_size, modulus, corrupted_array)
+    return [corrupted_array[i] for i in range(count)]
 
 def native_audit_log(event_type: str, index: int, magnitude: int):
     if not _lib: return

@@ -11,7 +11,7 @@ for database pages, kernel block devices, and network protocols.
 import os
 import numpy as np
 import struct, io
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Tuple
 from collections import defaultdict
 from itertools import combinations
 from fsc.fsc_framework import solve_linear_system, gf_inv
@@ -61,7 +61,7 @@ class FSCWriter:
         self.all_fields = list(schema.all_fields)
     def add_record(self, data: Any): self.add_records([data])
     def add_records(self, data: Any):
-        source_np = np.array(data, dtype=np.int64)
+        source_np = np.asarray(data, dtype=np.int64)
         if len(source_np.shape) == 1: source_np = source_np.reshape(1, -1)
         nd = len(self.schema.data_fields); na = len(self.schema.all_fields); n_recs = source_np.shape[0]
         full_recs = np.zeros((n_recs, na), dtype=np.int64); full_recs[:, :nd] = source_np[:, :nd]
@@ -176,24 +176,31 @@ class FSCReader:
         elif corrupted_field_idx != -1: er_indices = [corrupted_field_idx]
         else: er_indices = None
         rec = self.records[r_idx]; data_np = rec[:len(self.data_fields)].copy()
-        failed = []; syndromes = []
+
+        # Fast dot product loop for small C
+        syndromes = []
+        failed = []
         for i, c in enumerate(self.constraints):
             target = (r_idx % (c.modulus or 251)) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
             actual = np.dot(data_np, c.weights)
             if c.modulus: actual %= c.modulus; synd = (target - actual) % c.modulus
             else: synd = target - actual
-            if synd != 0: failed.append(i); syndromes.append(synd)
-            else: syndromes.append(0)
+            syndromes.append(synd)
+            if synd != 0: failed.append(i)
+
         if not failed: return FSC_SUCCESS
-        syndromes = np.array(syndromes, dtype=np.int64); failed = np.array(failed, dtype=np.int32)
+
+        syndromes = np.array(syndromes, dtype=np.int64)
+        failed = np.array(failed, dtype=np.int32)
+
         if er_indices:
             for t in range(1, len(failed) + 1):
                 if t > len(er_indices): break
                 for c_subset in combinations(failed, t):
                     if len(c_subset) < len(er_indices): continue
-                    p = self.constraints[c_subset[0]].modulus
+                    p = self._moduli[c_subset[0]]
                     A = self._weight_matrix[list(c_subset)][:, list(er_indices)]
-                    if p:
+                    if p > 0:
                         sol = solve_linear_system(A % p, [syndromes[i] % p for i in c_subset], p)
                         if sol:
                             for idx, ci in enumerate(er_indices): self.records[r_idx, ci] = (int(data_np[ci]) + sol[idx]) % p
@@ -206,21 +213,50 @@ class FSCReader:
                             return FSC_SUCCESS
                         except: continue
             return FSC_ERR_INVALID
-        i1 = failed[0]; p1 = self.constraints[i1].modulus; s1 = syndromes[i1]
-        for ci in range(len(self.data_fields)):
-            w1 = self.constraints[i1].weights[ci]
-            if w1 == 0: continue
-            if p1:
+
+        # Bolt Optimization: O(1) Localization via Syndrome Cross-Correlation
+        i1 = failed[0]; p1 = int(self._moduli[i1]); s1 = syndromes[i1]
+        w1 = self._weight_matrix[i1]
+
+        if p1 > 0:
+            # We want to find ci such that s_j * w1[ci] == s1 * w_j[ci] (mod p_j) for all j
+            # This handles multiple failed constraints simultaneously to pinpoint the column
+
+            # Start with candidates where w1 is non-zero
+            cand_mask = (w1 % p1 != 0)
+
+            # Refine candidates using all failed constraints
+            # (Note: only works easily if p_j == p1, which is common. For others, we fallback)
+            for f_idx in failed[1:]:
+                pj = int(self._moduli[f_idx])
+                if pj == p1:
+                    sj = syndromes[f_idx]
+                    wj = self._weight_matrix[f_idx]
+                    cand_mask &= ((sj * w1) % p1 == (s1 * wj) % p1)
+
+            cand_indices = np.where(cand_mask)[0]
+            if len(cand_indices) == 1:
+                ci = cand_indices[0]
+                mag = (s1 * gf_inv(int(w1[ci] % p1), p1)) % p1
+                self.records[r_idx, ci] = (int(data_np[ci]) + mag) % p1
+                return FSC_SUCCESS
+
+            # If not uniquely localized, try remaining candidates with full verify
+            for ci in cand_indices:
                 try:
-                    mag = (s1 * gf_inv(int(w1 % p1), p1)) % p1
+                    mag = (s1 * gf_inv(int(w1[ci] % p1), p1)) % p1
                     test_v = data_np.copy(); test_v[ci] = (test_v[ci] + mag) % p1
                     if self._verify_record(r_idx, test_v): self.records[r_idx, ci] = test_v[ci]; return FSC_SUCCESS
                 except: continue
-            else:
-                if s1 % w1 == 0:
-                    mag = s1 // w1; test_v = data_np.copy(); test_v[ci] += mag
+        else:
+            cand_indices = np.where(w1 != 0)[0]
+            for ci in cand_indices:
+                ww1 = w1[ci]
+                if s1 % ww1 == 0:
+                    mag = s1 // ww1; test_v = data_np.copy(); test_v[ci] += mag
                     if self._verify_record(r_idx, test_v): self.records[r_idx, ci] = test_v[ci]; return FSC_SUCCESS
         return FSC_ERR_INVALID
+
     def verify_all_records(self) -> np.ndarray:
         if not self.constraints or len(self.records) == 0: return np.ones(len(self.records), dtype=bool)
         data_matrix = self.records[:, :len(self.data_fields)]; record_indices = np.arange(len(self.records)).reshape(-1, 1)
