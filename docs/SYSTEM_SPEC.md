@@ -1,52 +1,56 @@
 # FSC Universal Framework: System Specification
 
-## Module: `fsc/fsc_binary.py`
+## Module: fsc/fsc_binary.py
 
-### Class: `FSCReader`
-*   **__init__**`(self, filename: str)`: Ingests an .fsc file. In v5+, performs **Pre-Flight Healing** of schema metadata using the meta-footer.
-*   **verify_and_heal**`(self, record_idx: int, corrupted_field_idx: int = -1)`: Heals a specific record. Supports blind localization (=1$) and multi-fault erasure recovery.
-*   **verify_all_records**`(self) -> np.ndarray`: Vectorized O(N*C) audit of all file records.
+### Class: FSCReader
+- **__init__**(self, filename: str): Ingests an .fsc file. In v5+, performs **Pre-Flight Healing** of schema metadata using the meta-footer.
+- **verify_and_heal**(self, record_idx: int, corrupted_field_idx: int = -1): Heals a specific record. Supports blind localization (t=1) and multi-fault erasure recovery.
+- **verify_all_records**(self) -> np.ndarray: Vectorized O(N*C) audit of all file records.
 
-### Class: `FSCWriter`
-*   **write**`(self, filename: str)`: Serializes records to .fsc format. In v5+, appends a `0xDEADC0DE` meta-footer for metadata protection.
-
----
-
-## Module: `fsc/fsc_block.py`
-
-### Class: `FSCBlock`
-*   **heal**`(self) -> bool`: Performs Model 5 single-byte localization within a sector.
-
-### Class: `FSCVolume`
-*   **heal_volume**`(self) -> int`: Hierarchical recovery engine (Internal Model 5 + External algebraic RAID).
-*   **scrub**`(self) -> Dict`: Proactive maintenance utility. Identifies and repairs latent bit-rot.
+### Class: FSCWriter
+- **write**(self, filename: str): Serializes records to .fsc format. In v5+, appends a 0xDEADC0DE meta-footer for metadata protection.
 
 ---
 
-## Module: `fsc/fsc_dynamic.py`
+## Module: fsc/fsc_block.py
 
-### Class: `AdaptiveWeightEngine`
-*   **calculate_weights**`(data_types, modulus, seed)`: Generates entropy-inverse weights to prioritize metadata protection.
+### Class: FSCBlock
+- **heal**(self) -> bool: Performs Model 5 single-byte localization within a sector.
+- **write**(self, payload: bytes): Optimized internal parity calculation using pre-inverted 3x3 modular matrix.
 
----
-
-## Module: `fsc/fsc_framework.py`
-
-### Function: `solve_linear_system(A, b, p)`
-*   Gaussian elimination over (p)$ with explicit singularity detection.
-
-### Function: `gf_inv(a, p)`
-*   Modular inverse using Fermat's Little Theorem.
+### Class: FSCVolume
+- **heal_volume**(self) -> int: Hierarchical recovery engine (Internal Model 5 + External algebraic RAID). Optimized via C-acceleration.
+- **scrub**(self) -> Dict: Proactive maintenance utility. Identifies and repairs latent bit-rot.
 
 ---
 
-## Native Layer: `libfsc.so`
+## Module: fsc/fsc_dynamic.py
 
-### Function: `fsc_heal_multi8`
-*   Low-latency C implementation of the multi-fault algebraic solver for UINT8 pages.
+### Class: AdaptiveWeightEngine
+- **calculate_weights**(data_types, modulus, seed): Generates entropy-inverse weights to prioritize metadata protection.
 
-### Function: `fsc_calculate_sum8`
-*   High-throughput (1.1 GB/s) vectorized syndrome calculation.
+---
+
+## Native Layer: libfsc.so
+
+### Function: fsc_heal_erasure8
+- C-level multi-block RAID recovery solving the Vandermonde-like system over GF(p).
+
+### Function: fsc_calculate_sum8
+- High-throughput (1.1 GB/s) vectorized syndrome calculation.
+
+### Function: fsc_batch_verify_model5
+- Pass-through verification of 10,000 sectors in ~0.16s.
+
+---
+
+## Strategic Offensive Primitives (Arsenal)
+
+### Module: prototypes/database_forger.py
+- **Byzantine Forgery**: Simulating data modification that bypasses both internal sector parity and cross-block RAID parity.
+
+### Module: immortality_research.py
+- **Algebraic Ransomware**: Demonstration of irreversible manifold locking.
 
 ---
 **FSC Defensive Strategy Notice**
