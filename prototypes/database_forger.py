@@ -13,13 +13,16 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 OFFENSIVE ARSENAL: SOVEREIGN DATABASE FORGER (Optimized)
 ========================================================
 Achieves O(1) algebraic parity spoofing for arbitrary field changes.
+Now expanded with Byzantine Volume Forgery (Model 6).
 """
 
 import numpy as np
 import sys
+import time
 from typing import List, Tuple, Optional
 from fsc.fsc_framework import solve_linear_system
 from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.fsc_block import FSCVolume
 
 # Modulus for the demo - using 2^31-1 for INT64 dot compatibility
 P = 2147483647
@@ -38,7 +41,6 @@ class SovereignForger:
         """
         record = self.reader.records[record_idx].copy()
 
-        # 1. Resolve targets (Dynamic target support)
         targets = []
         for c in self.reader.constraints:
             if c.is_fiber: targets.append(record_idx % (c.modulus or 251))
@@ -49,19 +51,15 @@ class SovereignForger:
         for f_idx, new_val in field_changes.items():
             record[f_idx] = new_val
 
-        # 2. Optimal Index Selection (Heuristic: indices with weights closest to identity)
         k = self.nc
         if compensation_indices is None:
             compensation_indices = self.find_optimal_indices(field_changes)
 
-        if len(compensation_indices) < k:
-            return False
+        if len(compensation_indices) < k: return False
 
-        # 3. Multi-Constraint Linear Solve
         current_data = record[:self.nd].astype(np.int64)
         W = self.reader._weight_matrix
 
-        # Vectorized syndrome calculation for all constraints
         actuals = []
         for i, c in enumerate(self.reader.constraints):
             act = int(np.dot(c.weights, current_data))
@@ -69,19 +67,13 @@ class SovereignForger:
             actuals.append(act)
         actuals = np.array(actuals, dtype=np.int64)
 
-        # We solve for deltas: A @ delta = b (mod p)
-        # where b is the current drift from target
-        # Note: Prototype assumes uniform modulus across constraints
         p = int(self.reader._moduli[0] or P)
         b = (targets - actuals) % p
         A = W[:, compensation_indices] % p
 
         deltas = solve_linear_system(A.tolist(), b.tolist(), p)
-        if deltas is None:
-            # Singular matrix, try next available set of indices
-            return False
+        if deltas is None: return False
 
-        # 4. Inject Parity Shadow
         for i, comp_idx in enumerate(compensation_indices):
             record[comp_idx] = (int(record[comp_idx]) + deltas[i]) % p
 
@@ -89,55 +81,28 @@ class SovereignForger:
         return True
 
     def find_optimal_indices(self, field_changes: dict) -> List[int]:
-        """
-        Finds k indices that form a non-singular matrix with minimal total weight.
-        Minimizes the magnitude of compensation changes to reduce forensic footprint.
-        """
         k = self.nc
         modified = set(field_changes.keys())
         available = [i for i in range(self.nd) if i not in modified]
-
-        # Sort available indices by weight sum across all constraints (heuristic for 'impact')
         W = self.reader._weight_matrix
         impact = np.sum(np.abs(W), axis=0)
         sorted_available = sorted(available, key=lambda i: impact[i])
-
-        # Try first k available. If singular, we'd need to iterate, but for demo we pick the first k.
         return sorted_available[:k]
 
-    def forge_batch(self, record_indices: List[int], field_changes_list: List[dict]):
-        """
-        Forges multiple records in sequence using optimized algebraic compensation.
-        """
-        print(f"[!] Initiating batch forgery for {len(record_indices)} records...")
-        count = 0
-        for idx, changes in zip(record_indices, field_changes_list):
-            if self.forge_record(idx, changes):
-                count += 1
-        print(f"[✓] Batch Forgery Complete: {count} records poisoned.")
-
     def forge_batch_vectorized(self, record_indices: List[int], field_changes: dict):
-        """
-        Forges multiple records simultaneously using matrix-matrix algebraic solve.
-        All records undergo the same field change template.
-        """
         k = self.nc
         nr = len(record_indices)
         comp_indices = self.find_optimal_indices(field_changes)
         p = int(self.reader._moduli[0] or P)
 
-        # 1. Apply primary changes to all records
         for rec_idx in record_indices:
             for f_idx, val in field_changes.items():
                 self.reader.records[rec_idx, f_idx] = val
 
-        # 2. Vectorized Syndrome Matrix calculation
-        # syndromes: (nr, nc)
         record_matrix = self.reader.records[record_indices, :self.nd]
         actuals = record_matrix @ self.reader._weight_matrix.T
         actuals %= p
 
-        # Resolve targets for all records
         target_matrix = np.zeros((nr, k), dtype=np.int64)
         for i, rec_idx in enumerate(record_indices):
             rec = self.reader.records[rec_idx]
@@ -147,100 +112,114 @@ class SovereignForger:
                 else: target_matrix[i, c_idx] = rec[c.stored_field_idx]
 
         B = (target_matrix - actuals) % p
-
-        # 3. Batch Linear Solve (A @ X = B)
-        # A: (nc, k)
         A = self.reader._weight_matrix[:, comp_indices] % p
 
-        # We need to solve NR linear systems. If NR is large, we invert A once.
         try:
-            # Simple inversion in GF(P) for small k
-            # Since k is small (usually < 16), Gaussian elimination is fine.
-            # We use the existing solver column by column
             delta_matrix = np.zeros((nr, k), dtype=np.int64)
             for i in range(nr):
                 delta = solve_linear_system(A.tolist(), B[i].tolist(), p)
-                if delta:
-                    delta_matrix[i] = delta
+                if delta: delta_matrix[i] = delta
 
-            # 4. Apply batch compensation
             for i, rec_idx in enumerate(record_indices):
                 for j, comp_idx in enumerate(comp_indices):
                     self.reader.records[rec_idx, comp_idx] = (int(self.reader.records[rec_idx, comp_idx]) + delta_matrix[i, j]) % p
-
             return True
-        except Exception:
-            return False
+        except Exception: return False
 
-def run_offensive_demo():
-    print("=========================================================")
-    print("  SOVEREIGN ARSENAL: VECTORIZED DATABASE FORGERY")
-    print("=========================================================\n")
+class ByzantineVolumeForger:
+    """
+    Model 6: Cross-layer Forgery.
+    Modifies data in a way that bypasses both FSCBlock (internal sector)
+    parity AND FSCVolume (cross-block RAID) parity.
+    """
+    def __init__(self, volume: FSCVolume):
+        self.vol = volume
 
-    n_data = 20
-    schema = FSCSchema([FSCField(f"f{i}", "INT64") for i in range(n_data)])
-    for i in range(3):
-        weights = np.random.randint(1, 50, n_data).tolist()
-        schema.add_constraint(weights, modulus=P)
+    def forge_sector(self, sector_idx: int, byte_changes: dict) -> bool:
+        """
+        Forges a single sector and simultaneously updates RAID parity blocks
+        to maintain global volume invariants.
+        """
+        block = self.vol.blocks[sector_idx]
+        d_len = block.data_len
+        m = self.vol.m
 
-    filename = "vault.fsc"
-    writer = FSCWriter(schema)
-    writer.add_record([0] * n_data)
-    writer.write(filename)
+        # 1. Apply primary changes to the sector
+        orig_sector_data = block.data.copy()
+        for offset, val in byte_changes.items():
+            if offset < d_len:
+                block.data[offset] = val
 
-    reader = FSCReader(filename)
-    forger = SovereignForger(reader)
+        # 2. Heal internal Model 5 parity of the sector
+        # (Internal Model 5 parity is at the last 3 bytes)
+        block.write(block.data[:d_len].tobytes())
 
-    print("[*] Target Record Initial State: Validated.")
-    print("[!] Forging Account Balance (Field 10) to $1,000,000,000...")
-    forger.forge_record(0, {10: 1000000000})
+        # 3. Calculate deltas for cross-block parity
+        # Parity P_j = sum( (bi+1)^j * D_bi ) mod m
+        deltas = (block.data[:d_len].astype(np.int64) - orig_sector_data[:d_len].astype(np.int64)) % m
 
-    if reader._verify_record(0, reader.records[0, :n_data]):
-        print("[✓] FORGERY SUCCESSFUL: Algebraic invariants satisfied.")
-        print(f"[*] Forged Balance: ${reader.records[0, 10]:,}")
+        # 4. Propagate deltas to all parity blocks
+        for j in range(self.vol.k_parity):
+            p_idx = self.vol.n_data_blocks + j
+            p_block = self.vol.blocks[p_idx]
+
+            weight = pow(sector_idx + 1, j, m)
+            p_deltas = (deltas * weight) % m
+
+            # Update parity payload
+            p_payload = p_block.data[:d_len].astype(np.int64)
+            p_payload = (p_payload + p_deltas) % m
+
+            # Write and reseal the parity block
+            p_block.write(p_payload.astype(np.uint8).tobytes())
+
+        return True
+
+def run_byzantine_demo():
+    print("\n" + "="*60)
+    print("  BYZANTINE SHADOW-OPS: CROSS-BLOCK VOLUME FORGERY")
+    print("="*60)
+
+    # 1. Setup Volume
+    vol = FSCVolume(n_blocks=10, block_size=512, k_parity=2)
+    original_msg = b"TOP-SECRET-DATA-VOL-01" + b"." * 4000
+    vol.write_volume(original_msg)
+
+    print("[*] Volume Initialized. Global integrity validated.")
+
+    # 2. Perform Byzantine Forgery
+    forger = ByzantineVolumeForger(vol)
+    print("[!] Initiating Forgery on Sector 2...")
+    print("[!] Changing 'TOP-SECRET' to 'PUBLIC-INFO'...")
+
+    # 'TOP-SECRET' starts at index 0 of Sector 0.
+    # Wait, 'TOP-SECRET' is in sector 0.
+    new_text = b"PUBLIC-INFO"
+    changes = {i: new_text[i] for i in range(len(new_text))}
+    forger.forge_sector(0, changes)
+
+    # 3. Validate Stealth
+    print("\n[STEALH AUDIT]")
+    # Internal sector check
+    if vol.blocks[0].verify():
+        print("[✓] SECTOR STEALTH: Sector 0 reports internal HEALTHY.")
     else:
-        print("[✗] FORGERY FAILED: Checksum triggered.")
-        sys.exit(1)
+        print("[✗] SECTOR STEALTH: Sector 0 parity triggered!")
+
+    # Volume RAID check
+    status = vol.scrub()
+    if status['status'] == 'healthy' and status['latent_errors'] == 0:
+        print("[✓] VOLUME STEALTH: RAID Scrub reports volume HEALTHY.")
+    else:
+        print("[✗] VOLUME STEALTH: RAID Scrub detected the forgery!")
+        print(f"    Details: {status}")
+
+    # Data check
+    recovered = vol.read_volume()
+    if recovered.startswith(b"PUBLIC-INFO"):
+        print(f"\n[✓] FORGERY CONFIRMED: Recovered data = '{recovered[:11].decode()}'")
+    else:
+        print("[✗] FORGERY FAILED: Data mismatch.")
 
 if __name__ == "__main__":
-    run_offensive_demo()
-
-def test_batch_forgery():
-    print("\n[!] TESTING VECTORIZED BATCH FORGERY...")
-    n_data = 50
-    n_recs = 100
-    schema = FSCSchema([FSCField(f"f{i}", "INT64") for i in range(n_data)])
-    for _ in range(4):
-        schema.add_constraint(np.random.randint(1, 10, n_data).tolist(), modulus=2147483647)
-
-    filename = "batch_vault.fsc"
-    writer = FSCWriter(schema)
-    for _ in range(n_recs):
-        writer.add_record([0] * n_data)
-    writer.write(filename)
-
-    reader = FSCReader(filename)
-    forger = SovereignForger(reader)
-
-    indices = list(range(n_recs))
-    changes = {10: 123456, 20: 654321} # Template for all records
-
-    t0 = time.perf_counter()
-    success = forger.forge_batch_vectorized(indices, changes)
-    t1 = time.perf_counter()
-
-    if success:
-        print(f"[✓] Batch Forgery Successful: 100 records poisoned in {t1-t0:.4f}s.")
-        # Bulk verify with core optimized reader
-        all_status = reader.verify_all_records()
-        if np.all(all_status):
-            print("[✓] ALGEBRAIC STEALTH CONFIRMED: Core auditor accepts all 100 poisoned records.")
-        else:
-            print(f"[✗] AUDIT FAILED: {np.sum(~all_status)} records triggered parity check.")
-    else:
-        print("[✗] Batch Forgery Execution Failed.")
-
-import time
-
-if __name__ == "__main__":
-    test_batch_forgery()
+    run_byzantine_demo()

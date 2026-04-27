@@ -18,6 +18,17 @@
 ## 4. Horizon 4: Silicon Acceleration - [IN PROGRESS]
 *   **VHDL/Verilog Core**: Porting fsc_core.c to hardware logic for SSD controllers.
 *   **ROM/eFuse Blackboxing**: Burning FSC logic into silicon to create physically irreversible protection.
+*   **Asynchronous Logic Design**: GALS (Globally Asynchronous Locally Synchronous) solver architectures.
+
+## 5. Horizon 5: Post-Quantum Algebraic Primitives - [PLANNED]
+*   **Lattice-based FSC**: Upgrading GF(p) solvers to Ring-LWE (Learning With Errors) structures for Q-Day readiness.
+*   **Homomorphic Integrity**: Algebraic verification of encrypted data-at-rest without decryption.
+*   **Zero-Knowledge Healing**: Proving a record is healed without revealing the corrected contents.
+
+## 6. Horizon 6: Distributed Sovereign Mesh - [PLANNED]
+*   **Algebraic Consensus**: Replacing Paxos/Raft with polynomial-sum based agreement protocols.
+*   **Topological Sharding**: Dynamic data distribution based on manifold distance.
+*   **Self-Synthesizing Nodes**: Nodes that automatically generate their own local FSC weights based on global entropy.
 
 ---
 **FSC Defensive Strategy Notice**
