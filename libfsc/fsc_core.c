@@ -453,3 +453,12 @@ int fsc_silicon_verify_gate(const uint8_t* data, const uint8_t* rom_weights, siz
     for (size_t i = 0; i < n; i++) sum += (__int128_t)data[i] * rom_weights[i];
     return (int64_t)(sum % modulus) == target;
 }
+
+
+int fsc_block_verify(const uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus) {
+    __int128_t s[4]; fsc_syndromes_4way(block, block_size, s);
+    int64_t b_salt = block_id + 1;
+    return ((int64_t)(s[0] % modulus) == (b_salt % modulus) &&
+            (int64_t)(s[1] % modulus) == ((b_salt * 7) % modulus) &&
+            (int64_t)(s[2] % modulus) == ((b_salt * 13) % modulus));
+}

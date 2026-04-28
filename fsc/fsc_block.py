@@ -7,7 +7,7 @@ import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
 from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -40,6 +40,12 @@ class FSCBlock:
         self._A_inv = np.array(A_inv_rows, dtype=np.int64).T
 
     def write(self, payload: bytes):
+        if is_native_available():
+            p_len = min(len(payload), self.data_len)
+            self.data[:p_len] = np.frombuffer(payload[:p_len], dtype=np.uint8)
+            self.data[p_len:self.data_len] = 0
+            native_block_seal(self.data, self.block_id, self.m)
+            return
         p_len = min(len(payload), self.data_len)
         self.data[:p_len] = np.frombuffer(payload[:p_len], dtype=np.uint8)
         self.data[p_len:self.data_len] = 0
@@ -64,6 +70,8 @@ class FSCBlock:
         self.data[self.size - 1] = int(p3)
 
     def verify(self) -> bool:
+        if is_native_available():
+            return native_block_verify(self.data, self.block_id, self.m)
         d = self.data.astype(np.int64)
         b_salt = self.block_id + 1
         return (int(np.sum(d) % self.m) == b_salt % self.m and
