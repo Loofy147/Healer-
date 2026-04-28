@@ -1,9 +1,3 @@
-/**
- * FSC: Forward Sector Correction
- * Optimized Native Core v7.19 (GB/s Production Baseline)
- * Parallel SIMD + Salted Targets + Optimized RAID Solve
- */
-
 #include "libfsc.h"
 #include <string.h>
 #include <immintrin.h>
@@ -240,7 +234,35 @@ int64_t fsc_calculate_sum8_avx2(const uint8_t* data, const int32_t* weights, siz
     }
     __int128_t sum = 0;
     if (weights) {
-        for (size_t i = 0; i < n; i++) sum += (__int128_t)data[i] * weights[i];
+        // Bolt Optimization: AVX2 vectorized weighted sum
+        size_t i = 0;
+        __m256i v_sum = _mm256_setzero_si256();
+        for (; i + 7 < n; i += 8) {
+            __m128i d8 = _mm_loadu_si64((const __m128i*)(data + i));
+            __m256i d32 = _mm256_cvtepu8_epi32(d8);
+            __m256i w32 = _mm256_loadu_si256((const __m256i*)(weights + i));
+
+            // Multiply 32-bit to 64-bit and accumulate
+            // Even lanes
+            __m256i p_even = _mm256_mul_epi32(d32, w32);
+            // Odd lanes
+            __m256i d32_odd = _mm256_srli_si256(d32, 4);
+            __m256i w32_odd = _mm256_srli_si256(w32, 4);
+            __m256i p_odd = _mm256_mul_epi32(d32_odd, w32_odd);
+
+            v_sum = _mm256_add_epi64(v_sum, _mm256_add_epi64(p_even, p_odd));
+
+            // Periodically flush to sum to avoid 64-bit overflow if n is huge
+            if ((i & 0x7FF) == 0x7F8) { // Every 2048 elements
+                uint64_t r[4]; _mm256_storeu_si256((__m256i*)r, v_sum);
+                sum += (__int128_t)r[0] + r[1] + r[2] + r[3];
+                v_sum = _mm256_setzero_si256();
+            }
+        }
+        uint64_t r[4];
+        _mm256_storeu_si256((__m256i*)r, v_sum);
+        sum += (__int128_t)r[0] + r[1] + r[2] + r[3];
+        for (; i < n; i++) sum += (__int128_t)data[i] * weights[i];
     } else {
         for (size_t i = 0; i < n; i++) sum += data[i];
     }
