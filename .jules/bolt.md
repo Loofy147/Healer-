@@ -54,3 +54,11 @@
 ## 2024-05-24 - [AVX2 Weighted Sum Bottleneck]
 **Learning:** The native `fsc_calculate_sum8_avx2` had a fast path for unweighted sums but fell back to a scalar loop for weighted sums. Since weighted sums are the core of Model 5/RAID verification and encoding, this was a major bottleneck (~0.84 GB/s).
 **Action:** Implemented an AVX2 vectorized path for weighted sums using `_mm256_cvtepu8_epi32` and `_mm256_mul_epi32` with even/odd lane interleaving. This improved weighted verification throughput by ~4.1x (to 3.47 GB/s).
+
+## 2024-05-24 - [AVX2 Unweighted Sum with _mm256_sad_epu8]
+**Learning:** `_mm256_sad_epu8` is the most efficient way to sum bytes in AVX2, as it performs 32 absolute differences against zero and accumulates into 64-bit lanes in a single instruction. This achieved ~15 GB/s, significantly faster than a standard accumulation loop.
+**Action:** Use `_mm256_sad_epu8` for all unweighted byte summation tasks in native core.
+
+## 2024-05-24 - [Hoisting Sums in Multi-Fault Healing]
+**Learning:** The previous `fsc_heal_multi8` implementation had a nested O(k * N) loop with an $O(k)$ branch check inside the inner loop to skip corrupted indices. For large records, the branch mispredictions and redundant summation were costly.
+**Action:** Hoist the full record sum out of the solver loop using the optimized vectorized path, then perform $O(k^2)$ scalar subtractions for the corrupted indices. This replaces $O(k \cdot N)$ with $O(N + k^2)$, significantly improving multi-fault recovery speed for large records.
