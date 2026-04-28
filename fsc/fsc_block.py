@@ -7,7 +7,7 @@ import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
 from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -106,6 +106,15 @@ class FSCVolume:
             self.blocks.append(FSCBlock(i, block_size, self.m, data=block_view))
 
     def write_volume(self, data: bytes):
+        if is_native_available():
+            chunk_size = self.blocks[0].data_len
+            n_bytes = min(len(data), self.n_data_blocks * chunk_size)
+            self.data_buffer[:n_bytes] = np.frombuffer(data[:n_bytes], dtype=np.uint8)
+            if n_bytes < self.n_data_blocks * chunk_size:
+                self.data_buffer[n_bytes:self.n_data_blocks * chunk_size] = 0
+            native_volume_encode8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, self.m)
+            return
+
         chunk_size = self.blocks[0].data_len
         # Vectorized parity computation using NumPy matrix multiplication
         all_data_payloads = np.zeros((self.n_data_blocks, chunk_size), dtype=np.int64)

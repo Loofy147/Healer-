@@ -12,6 +12,7 @@
 #include "libfsc.h"
 #include <string.h>
 
+#include <immintrin.h>
 /**
  * Extended Euclidean Algorithm for modular inverse.
  */
@@ -519,4 +520,73 @@ void fsc_audit_log(const char* event_type, int index, int64_t magnitude) {
 #else
     (void)event_type; (void)index; (void)magnitude;
 #endif
+}
+
+/**
+ * fsc_calculate_sum8_avx2: AVX2-optimized modular sum.
+ */
+int64_t fsc_calculate_sum8_avx2(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
+    if (weights || modulus != 251 || n % 32 != 0) {
+        return fsc_calculate_sum8(data, weights, n, modulus);
+    }
+
+    __m256i sum_vec = _mm256_setzero_si256();
+    for (size_t i = 0; i < n; i += 32) {
+        __m256i v = _mm256_loadu_si256((const __m256i*)(data + i));
+        // Unpack and sum
+        __m256i low = _mm256_unpacklo_epi8(v, _mm256_setzero_si256());
+        __m256i high = _mm256_unpackhi_epi8(v, _mm256_setzero_si256());
+
+        __m256i low_16 = _mm256_unpacklo_epi16(low, _mm256_setzero_si256());
+        __m256i high_16 = _mm256_unpackhi_epi16(low, _mm256_setzero_si256());
+        sum_vec = _mm256_add_epi32(sum_vec, low_16);
+        sum_vec = _mm256_add_epi32(sum_vec, high_16);
+
+        low_16 = _mm256_unpacklo_epi16(high, _mm256_setzero_si256());
+        high_16 = _mm256_unpackhi_epi16(high, _mm256_setzero_si256());
+        sum_vec = _mm256_add_epi32(sum_vec, low_16);
+        sum_vec = _mm256_add_epi32(sum_vec, high_16);
+    }
+
+    int32_t sums[8];
+    _mm256_storeu_si256((__m256i*)sums, sum_vec);
+    int64_t total = 0;
+    for (int i = 0; i < 8; i++) total += sums[i];
+    return total % modulus;
+}
+
+/**
+ * fsc_volume_encode8: Native full-volume encoding (RAID + Internal Seal).
+ */
+int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus) {
+    size_t n_data_blocks = n_blocks - k_parity;
+    size_t d_len = block_size - 3;
+
+    // 1. Seal all data blocks
+    for (size_t i = 0; i < n_data_blocks; i++) {
+        fsc_block_seal(volume_data + (i * block_size), block_size, (int64_t)i, modulus);
+    }
+
+    // 2. Generate RAID parity
+    for (size_t col = 0; col < d_len; col++) {
+        for (size_t j = 0; j < k_parity; j++) {
+            __int128_t parity_val = 0;
+            for (size_t i = 0; i < n_data_blocks; i++) {
+                uint8_t val = volume_data[i * block_size + col];
+                __int128_t weight = 1;
+                for (size_t p = 0; p < j; p++) weight = (weight * (i + 1)) % modulus;
+                parity_val = (parity_val + (__int128_t)val * weight) % modulus;
+            }
+            size_t p_idx = n_data_blocks + j;
+            volume_data[p_idx * block_size + col] = (uint8_t)(parity_val % 256);
+        }
+    }
+
+    // 3. Seal parity blocks
+    for (size_t j = 0; j < k_parity; j++) {
+        size_t p_idx = n_data_blocks + j;
+        fsc_block_seal(volume_data + (p_idx * block_size), block_size, (int64_t)p_idx, modulus);
+    }
+
+    return FSC_SUCCESS;
 }

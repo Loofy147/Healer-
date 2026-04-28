@@ -121,6 +121,16 @@ if _lib:
     ]
     _lib.fsc_audit_log.restype = None
 
+    # int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus)
+    _lib.fsc_volume_encode8.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_int64
+    ]
+    _lib.fsc_volume_encode8.restype = ctypes.c_int
+
 def is_native_available() -> bool:
     return _lib is not None
 
@@ -200,3 +210,9 @@ def native_heal_erasure8(volume_data: np.ndarray, n_blocks: int, block_size: int
 def native_audit_log(event_type: str, index: int, magnitude: int):
     if not _lib: return
     _lib.fsc_audit_log(event_type.encode(), index, magnitude)
+
+def native_volume_encode8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    data_ptr = volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    res = _lib.fsc_volume_encode8(data_ptr, n_blocks, block_size, k_parity, modulus)
+    return res == FSC_SUCCESS
