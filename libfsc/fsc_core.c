@@ -116,6 +116,15 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
     #pragma omp parallel for
     for (size_t i = 0; i < n_data; i++) fsc_block_seal(volume_data + (i * block_size), block_size, (int64_t)i, modulus);
 
+    uint32_t* weights = (uint32_t*)malloc(k_parity * n_data * sizeof(uint32_t));
+    for (size_t i = 0; i < n_data; i++) {
+        uint32_t w = 1;
+        for (size_t j = 0; j < k_parity; j++) {
+            weights[j * n_data + i] = w;
+            w = (uint32_t)(((__int128_t)w * (i + 1)) % modulus);
+        }
+    }
+
     #pragma omp parallel
     {
         uint32_t* t_acc = (uint32_t*)calloc(k_parity * 64, sizeof(uint32_t));
@@ -125,8 +134,8 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
             memset(t_acc, 0, k_parity * 64 * sizeof(uint32_t));
             for (size_t i = 0; i < n_data; i++) {
                 const uint8_t* d_ptr = volume_data + (i * block_size) + c_base;
-                uint32_t w = 1;
                 for (size_t j = 0; j < k_parity; j++) {
+                    uint32_t w = weights[j * n_data + i];
                     __m256i v_w = _mm256_set1_epi32((int)w);
                     uint32_t* p_acc = t_acc + (j * 64);
                     size_t c = 0;
@@ -137,7 +146,6 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
                         _mm256_storeu_si256((__m256i*)&p_acc[c], _mm256_add_epi32(v_acc, _mm256_mullo_epi32(d32, v_w)));
                     }
                     for (; c < stripe; c++) p_acc[c] += (uint32_t)d_ptr[c] * w;
-                    w = (uint32_t)(((__int128_t)w * (i + 1)) % modulus);
                 }
             }
             for (size_t j = 0; j < k_parity; j++) {
@@ -148,6 +156,7 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
         }
         free(t_acc);
     }
+    free(weights);
     #pragma omp parallel for
     for (size_t j = 0; j < k_parity; j++) fsc_block_seal(volume_data + ((n_data + j) * block_size), block_size, (int64_t)(n_data + j), modulus);
     return 1;
