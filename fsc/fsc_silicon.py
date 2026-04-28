@@ -4,7 +4,7 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 
 import numpy as np
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_silicon_verify_gate
 
 class FSCSiliconCore:
     """
@@ -24,9 +24,7 @@ class FSCSiliconCore:
     def verify_gate(self, data: np.ndarray, target: int) -> bool:
         """Simulation of a combinatorial sum-product gate network."""
         if is_native_available():
-            # Use weights from self.rom_weights as int32
-            w = self.rom_weights[:len(data)].astype(np.int32)
-            return native_calculate_sum8(data, w, self.modulus) == target
+            return native_silicon_verify_gate(data, self.rom_weights[:len(data)], target, self.modulus)
         # Bolt: Vectorized logic simulating parallel hardware lanes
         weighted_sum = np.sum(data.astype(np.int64) * self.rom_weights[:len(data)])
         return (weighted_sum % self.modulus) == target

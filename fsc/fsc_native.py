@@ -131,6 +131,28 @@ if _lib:
     ]
     _lib.fsc_volume_encode8.restype = ctypes.c_int
 
+    # int fsc_volume_write8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus, const uint8_t* user_data, size_t user_data_len)
+    _lib.fsc_volume_write8.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_int64,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t
+    ]
+    _lib.fsc_volume_write8.restype = ctypes.c_int
+
+    # int fsc_silicon_verify_gate(const uint8_t* data, const uint8_t* rom_weights, size_t n, int64_t target, int64_t modulus)
+    _lib.fsc_silicon_verify_gate.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.c_int64,
+        ctypes.c_int64
+    ]
+    _lib.fsc_silicon_verify_gate.restype = ctypes.c_int
+
 def is_native_available() -> bool:
     return _lib is not None
 
@@ -216,3 +238,19 @@ def native_volume_encode8(volume_data: np.ndarray, n_blocks: int, block_size: in
     data_ptr = volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
     res = _lib.fsc_volume_encode8(data_ptr, n_blocks, block_size, k_parity, modulus)
     return res == FSC_SUCCESS
+
+def native_volume_write8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, modulus: int, user_data: bytes) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    data_ptr = volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    ud_array = (ctypes.c_uint8 * len(user_data)).from_buffer_copy(user_data)
+    res = _lib.fsc_volume_write8(data_ptr, n_blocks, block_size, k_parity, modulus, ud_array, len(user_data))
+    return res == FSC_SUCCESS
+
+
+
+def native_silicon_verify_gate(data: np.ndarray, rom_weights: np.ndarray, target: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    d_ptr = data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    w_ptr = rom_weights.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    res = _lib.fsc_silicon_verify_gate(d_ptr, w_ptr, len(data), target, modulus)
+    return res != 0
