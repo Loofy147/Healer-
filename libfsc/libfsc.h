@@ -44,8 +44,11 @@ int fsc_heal_multi8(uint8_t* data, const int32_t* weights, size_t n_data,
                    const int64_t* targets, const int64_t* moduli,
                    size_t k_faults, const size_t* corrupted_indices);
 
-size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t block_size,
-                             int64_t modulus, size_t* corrupted_indices);
+size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t block_size, int64_t modulus, size_t* corrupted_indices);
+int64_t fsc_calculate_sum8_avx2(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus);
+int fsc_volume_write8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus, const uint8_t* user_data, size_t user_data_len);
+int fsc_silicon_verify_gate(const uint8_t* data, const uint8_t* rom_weights, size_t n, int64_t target, int64_t modulus);
+int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus);
 
 int fsc_block_seal(uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus);
 

@@ -7,7 +7,7 @@ import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
 from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -44,7 +44,8 @@ class FSCBlock:
         self.data[:p_len] = np.frombuffer(payload[:p_len], dtype=np.uint8)
         self.data[p_len:self.data_len] = 0
 
-        t1, t2, t3 = self.block_id % self.m, (self.block_id * 7) % self.m, (self.block_id * 13) % self.m
+        b_salt = self.block_id + 1
+        t1, t2, t3 = b_salt % self.m, (b_salt * 7) % self.m, (b_salt * 13) % self.m
         d = self.data[:self.data_len].astype(np.int64)
 
         s_d = int(np.sum(d) % self.m)
@@ -64,15 +65,17 @@ class FSCBlock:
 
     def verify(self) -> bool:
         d = self.data.astype(np.int64)
-        return (int(np.sum(d) % self.m) == self.block_id % self.m and
-                int(np.dot(d, self.w) % self.m) == (self.block_id * 7) % self.m and
-                int(np.dot(d, self.w2) % self.m) == (self.block_id * 13) % self.m)
+        b_salt = self.block_id + 1
+        return (int(np.sum(d) % self.m) == b_salt % self.m and
+                int(np.dot(d, self.w) % self.m) == (b_salt * 7) % self.m and
+                int(np.dot(d, self.w2) % self.m) == (b_salt * 13) % self.m)
 
     def heal(self) -> bool:
         n, m = self.size, self.m
         d = self.data.astype(np.int64)
         s1, s2, s3 = int(np.sum(d) % m), int(np.dot(d, self.w) % m), int(np.dot(d, self.w2) % m)
-        t1, t2, t3 = self.block_id % m, (self.block_id * 7) % m, (self.block_id * 13) % m
+        b_salt = self.block_id + 1
+        t1, t2, t3 = b_salt % m, (b_salt * 7) % m, (b_salt * 13) % m
 
         if s1 == t1 and s2 == t2 and s3 == t3: return True
 
@@ -92,13 +95,23 @@ class FSCVolume:
     """
     Algebraic RAID Volume with Proactive Scrubbing (v7).
     """
-    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2):
+    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None):
         self.n_blocks, self.block_size, self.k_parity = n_blocks, block_size, k_parity
         self.n_data_blocks = n_blocks - k_parity
         self.m = 251
 
-        # Bolt Optimization: Single contiguous buffer for all blocks to enable zero-copy C operations
-        self.data_buffer = np.zeros(n_blocks * block_size, dtype=np.uint8)
+        # Bolt Optimization: Support external buffers (e.g. mmap) for zero-copy
+        if buffer is not None:
+            self.data_buffer = buffer
+        else:
+            # 64-byte alignment for SIMD efficiency
+            total_bytes = n_blocks * block_size
+            # NumPy default alignment is usually 16-32, force 64 for AVX-512 readiness
+            # and to prevent cache line splits.
+            raw_buffer = np.zeros(total_bytes + 64, dtype=np.uint8)
+            offset = (64 - (raw_buffer.ctypes.data % 64)) % 64
+            self.data_buffer = raw_buffer[offset : offset + total_bytes]
+
         self.blocks = []
         for i in range(n_blocks):
             # Create a view into the main buffer
@@ -106,6 +119,21 @@ class FSCVolume:
             self.blocks.append(FSCBlock(i, block_size, self.m, data=block_view))
 
     def write_volume(self, data: bytes):
+        if is_native_available():
+            chunk_size = self.blocks[0].data_len
+            for i in range(self.n_data_blocks):
+                d_start = i * chunk_size
+                b_start = i * self.block_size
+                chunk = data[d_start : d_start + chunk_size]
+                if chunk:
+                    self.data_buffer[b_start : b_start + len(chunk)] = np.frombuffer(chunk, dtype=np.uint8)
+                    if len(chunk) < chunk_size:
+                        self.data_buffer[b_start + len(chunk) : b_start + chunk_size] = 0
+                else:
+                    self.data_buffer[b_start : b_start + chunk_size] = 0
+            native_volume_encode8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, self.m)
+            return
+
         chunk_size = self.blocks[0].data_len
         # Vectorized parity computation using NumPy matrix multiplication
         all_data_payloads = np.zeros((self.n_data_blocks, chunk_size), dtype=np.int64)
