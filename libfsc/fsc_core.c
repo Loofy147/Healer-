@@ -42,22 +42,18 @@ static inline void fsc_syndromes_4way(const uint8_t* block, size_t n, __int128_t
         __m256i d_hi = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(d32, 1));
         __m256i w_lo = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_w, 0));
         __m256i w_hi = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_w, 1));
-
         v_s0 = _mm256_add_epi64(v_s0, _mm256_add_epi64(d_lo, d_hi));
         __m256i p1_lo = _mm256_mul_epu32(d_lo, w_lo), p1_hi = _mm256_mul_epu32(d_hi, w_hi);
         v_s1 = _mm256_add_epi64(v_s1, _mm256_add_epi64(p1_lo, p1_hi));
-
         __m256i w2_lo = _mm256_mul_epu32(w_lo, w_lo), w2_hi = _mm256_mul_epu32(w_hi, w_hi);
         __m256i p2_lo = _mm256_add_epi64(_mm256_mul_epu32(d_lo, w2_lo), _mm256_slli_epi64(_mm256_mul_epu32(d_lo, _mm256_srli_epi64(w2_lo, 32)), 32));
         __m256i p2_hi = _mm256_add_epi64(_mm256_mul_epu32(d_hi, w2_hi), _mm256_slli_epi64(_mm256_mul_epu32(d_hi, _mm256_srli_epi64(w2_hi, 32)), 32));
         v_s2 = _mm256_add_epi64(v_s2, _mm256_add_epi64(p2_lo, p2_hi));
-
         __m256i w3_lo = _mm256_add_epi64(_mm256_mul_epu32(w2_lo, w_lo), _mm256_slli_epi64(_mm256_mul_epu32(_mm256_srli_epi64(w2_lo, 32), w_lo), 32));
         __m256i w3_hi = _mm256_add_epi64(_mm256_mul_epu32(w2_hi, w_hi), _mm256_slli_epi64(_mm256_mul_epu32(_mm256_srli_epi64(w2_hi, 32), w_hi), 32));
         __m256i p3_lo = _mm256_add_epi64(_mm256_mul_epu32(d_lo, w3_lo), _mm256_slli_epi64(_mm256_mul_epu32(d_lo, _mm256_srli_epi64(w3_lo, 32)), 32));
         __m256i p3_hi = _mm256_add_epi64(_mm256_mul_epu32(d_hi, w3_hi), _mm256_slli_epi64(_mm256_mul_epu32(d_hi, _mm256_srli_epi64(w3_hi, 32)), 32));
         v_s3 = _mm256_add_epi64(v_s3, _mm256_add_epi64(p3_lo, p3_hi));
-
         v_w = _mm256_add_epi32(v_w, v_8);
         if (++iter >= 256) {
             uint64_t r[16];
@@ -115,7 +111,6 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
     size_t n_data = n_blocks - k_parity, d_len = block_size - 3;
     #pragma omp parallel for
     for (size_t i = 0; i < n_data; i++) fsc_block_seal(volume_data + (i * block_size), block_size, (int64_t)i, modulus);
-
     uint32_t* weights = (uint32_t*)malloc(k_parity * n_data * sizeof(uint32_t));
     for (size_t i = 0; i < n_data; i++) {
         uint32_t w = 1;
@@ -124,7 +119,6 @@ int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
             w = (uint32_t)(((__int128_t)w * (i + 1)) % modulus);
         }
     }
-
     #pragma omp parallel
     {
         uint32_t* t_acc = (uint32_t*)calloc(k_parity * 64, sizeof(uint32_t));
@@ -239,11 +233,22 @@ int fsc_heal_erasure8(uint8_t* volume_data, size_t n_blocks, size_t block_size, 
     return 1;
 }
 
-int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
-    if (!weights && modulus == 251 && n >= 32) { __int128_t s[4]; fsc_syndromes_4way(data, n, s); return (int64_t)(s[0] % modulus); }
-    __int128_t sum = 0; if (weights) for (size_t i = 0; i < n; i++) sum += (__int128_t)data[i] * weights[i];
-    else for (size_t i = 0; i < n; i++) sum += data[i];
+int64_t fsc_calculate_sum8_avx2(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
+    if (!weights && modulus == 251 && n >= 32) {
+        __int128_t s[4]; fsc_syndromes_4way(data, n, s);
+        return (int64_t)(s[0] % modulus);
+    }
+    __int128_t sum = 0;
+    if (weights) {
+        for (size_t i = 0; i < n; i++) sum += (__int128_t)data[i] * weights[i];
+    } else {
+        for (size_t i = 0; i < n; i++) sum += data[i];
+    }
     return (modulus > 0) ? (int64_t)((sum % modulus + modulus) % modulus) : (int64_t)sum;
+}
+
+int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
+    return fsc_calculate_sum8_avx2(data, weights, n, modulus);
 }
 
 uint8_t fsc_heal_single8(const uint8_t* data, const int32_t* weights, size_t n, int64_t target, int64_t modulus, size_t corrupted_idx) {

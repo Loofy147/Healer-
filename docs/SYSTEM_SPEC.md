@@ -24,6 +24,50 @@
 
 ---
 
+## Module: fsc/fsc_silicon.py (Horizon 4)
+
+### Class: FSCSiliconCore
+- **verify_gate**(self, data, target): Combinatorial sum-product gate simulation with GALS asynchronous logic islands.
+- **heal_gate**(self, data, target, idx): eFuse-protected physical healing simulation.
+
+### Class: SiliconEFuse
+- Irreversible hardware lock simulation using bit-blown state transitions.
+
+### Class: PhysicalUnclonableFunction
+- Device-specific hardware signature generation based on silicon manufacturing entropy.
+
+---
+
+## Module: fsc/fsc_quantum.py (Horizon 5)
+
+### Class: LatticeIntegrity
+- Post-Quantum algebraic integrity using Ring-LWE (Learning With Errors) inspired structures.
+
+### Class: LatticeErasureCoding
+- Quantum-resistant RAID. Uses lattice-based polynomial relations to provide resilient data sharding and recovery.
+
+### Class: HomomorphicIntegrity
+- Verification of encrypted data-at-rest without decryption using lattice-based homomorphic properties.
+
+---
+
+## Module: fsc/fsc_mesh.py (Horizon 6)
+
+### Class: TopologicalSharder
+- Manifold-based distributed data placement and recovery. Provides Resilient Mesh Encoding (cross-node RAID) and reconstruction logic.
+
+### Class: ConsensusManifold
+- Polynomial-sum based distributed agreement protocol (Algebraic Consensus).
+
+---
+
+## Module: fsc/fsc_manifold.py
+
+### Class: LayeredManifold
+- Defense-in-depth algebraic protection using multiple simultaneous finite fields. Cross-verifies healing candidates against high-confidence manifolds.
+
+---
+
 ## Module: fsc/fsc_dynamic.py
 
 ### Class: AdaptiveWeightEngine
@@ -31,16 +75,12 @@
 
 ---
 
-## Native Layer: libfsc.so
+## Native Layer: libfsc.so (v7.19)
 
-### Function: fsc_heal_erasure8
-- C-level multi-block RAID recovery solving the Vandermonde-like system over GF(p).
-
-### Function: fsc_calculate_sum8
-- High-throughput (1.1 GB/s) vectorized syndrome calculation.
-
-### Function: fsc_batch_verify_model5
-- Pass-through verification of 10,000 sectors in ~0.16s.
+### Optimized Primitives
+- **fsc_syndromes_4way**: Hardened SIMD syndrome calculation using 64-bit intermediate products.
+- **fsc_volume_encode8**: Performance-optimized RAID encoding using pre-calculated weight matrices.
+- **fsc_heal_erasure8**: C-level multi-block RAID recovery solving the Vandermonde-like system over GF(p).
 
 ---
 
