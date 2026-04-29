@@ -103,10 +103,10 @@ class FSCVolume:
     """
     Algebraic RAID Volume with Proactive Scrubbing (v7).
     """
-    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None):
+    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: int = 251):
         self.n_blocks, self.block_size, self.k_parity = n_blocks, block_size, k_parity
         self.n_data_blocks = n_blocks - k_parity
-        self.m = 251
+        self.m = modulus
 
         # Bolt Optimization: Support external buffers (e.g. mmap) for zero-copy
         if buffer is not None:
