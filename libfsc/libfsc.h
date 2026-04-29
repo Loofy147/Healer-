@@ -51,6 +51,7 @@ int fsc_silicon_verify_gate(const uint8_t* data, const uint8_t* rom_weights, siz
 int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus);
 
 int fsc_block_seal(uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus);
+int fsc_block_verify(const uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus);
 
 int fsc_heal_erasure8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
                      size_t k_parity, size_t n_lost, const size_t* bad_indices,
