@@ -16,7 +16,7 @@ OFFENSIVE ARSENAL: TOPOLOGICAL STEGANOGRAPHY (GHOST)
 
 import numpy as np
 import sys
-from fsc.fsc_framework import solve_linear_system
+from fsc.core.fsc_framework import solve_linear_system
 
 # Modulus for the demo
 P = 251

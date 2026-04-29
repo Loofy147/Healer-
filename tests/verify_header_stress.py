@@ -3,8 +3,8 @@ import os
 import struct
 sys.path.append(os.getcwd())
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-import fsc.fsc_binary
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+import fsc.storage.fsc_binary
 
 def test_header_stress():
     print("=========================================================")

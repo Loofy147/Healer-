@@ -3,7 +3,7 @@ import os
 import numpy as np
 sys.path.append(os.getcwd())
 
-from fsc.fsc_block import FSCVolume
+from fsc.storage.fsc_block import FSCVolume
 
 def test_volume_scrubbing():
     print("=========================================================")

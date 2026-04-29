@@ -4,9 +4,9 @@ Verification for Silicon Simulation (Horizon 4) and Byzantine Forgery (Model 6).
 """
 
 import numpy as np
-from fsc.fsc_silicon import FSCSiliconBlackbox
+from fsc.advanced.fsc_silicon import FSCSiliconBlackbox
 from prototypes.database_forger import ByzantineVolumeForger
-from fsc.fsc_block import FSCVolume
+from fsc.storage.fsc_block import FSCVolume
 
 def test_silicon_simulation():
     print("Testing Silicon Acceleration Simulation (Horizon 4)...")

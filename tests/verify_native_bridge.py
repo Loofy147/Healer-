@@ -3,7 +3,7 @@ import os
 import numpy as np
 sys.path.append(os.getcwd())
 
-from fsc.fsc_native import is_native_available, native_calculate_sum8
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8
 
 def test_bridge():
     print("Testing FSC Native Bridge...")

@@ -5,7 +5,7 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 
 import numpy as np
 from typing import List, Dict, Tuple, Optional
-from fsc.fsc_framework import gf_inv
+from fsc.core.fsc_framework import gf_inv
 
 class LayeredManifold:
     """

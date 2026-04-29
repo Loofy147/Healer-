@@ -14,8 +14,8 @@ import struct, io
 from typing import List, Any, Optional, Tuple
 from collections import defaultdict
 from itertools import combinations
-from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_multi64, native_heal_multi8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
+from fsc.core.fsc_framework import solve_linear_system, gf_inv
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_multi64, native_heal_multi8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 FSC_COMMERCIAL_BUILD = False
 MAX_FIELDS = 1024

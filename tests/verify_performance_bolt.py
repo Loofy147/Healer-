@@ -1,7 +1,7 @@
 import numpy as np
 import time
-from fsc.fsc_block import FSCVolume
-from fsc.fsc_native import is_native_available
+from fsc.storage.fsc_block import FSCVolume
+from fsc.core.fsc_native import is_native_available
 
 def bench_bolt():
     # Use standard sizes for regression but large enough to see improvements

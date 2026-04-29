@@ -4,7 +4,7 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 import numpy as np
 from typing import List, Tuple
-from fsc.fsc_framework import solve_linear_system, gf_inv
+from fsc.core.fsc_framework import solve_linear_system, gf_inv
 
 class AdaptiveWeightEngine:
     """

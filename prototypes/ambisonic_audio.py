@@ -10,7 +10,7 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_framework import FSCFactory, FSCHealer
+from fsc.core.fsc_framework import FSCFactory, FSCHealer
 import time
 
 def demo_ambisonics():

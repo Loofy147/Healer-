@@ -2,13 +2,13 @@ import sys
 import os
 sys.path.append(os.getcwd())
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-import fsc.fsc_binary
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+import fsc.storage.fsc_binary
 import struct
 
 def test_header_healing():
     print("Testing FSC v4 Self-Healing Header...")
-    fsc.fsc_binary.FSC_COMMERCIAL_BUILD = True # To see the logs
+    fsc.storage.fsc_binary.FSC_COMMERCIAL_BUILD = True # To see the logs
 
     fields = [FSCField("val", "UINT8")]
     schema = FSCSchema(fields)

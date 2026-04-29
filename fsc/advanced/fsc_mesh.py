@@ -7,7 +7,7 @@ import numpy as np
 import hashlib
 import random
 from typing import List, Dict, Optional
-from fsc.fsc_framework import solve_linear_system
+from fsc.core.fsc_framework import solve_linear_system
 
 class MeshNode:
     def __init__(self, node_id: str, coords: np.ndarray):

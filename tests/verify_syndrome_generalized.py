@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -15,7 +15,7 @@ import os
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 
 def test_syndrome_k2():
     print("━━ TESTING GENERALIZED SYNDROME DECODING (k=2) ━━")

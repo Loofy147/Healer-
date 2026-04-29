@@ -6,8 +6,8 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
-from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.core.fsc_framework import solve_linear_system, gf_inv
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """

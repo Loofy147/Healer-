@@ -10,7 +10,7 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_database import StructuralTable
+from fsc.storage.fsc_database import StructuralTable
 import random
 
 def test_database_healing():

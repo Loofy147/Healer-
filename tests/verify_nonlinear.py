@@ -10,7 +10,7 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_framework import ContinuityQuadraticHealer
+from fsc.core.fsc_framework import ContinuityQuadraticHealer
 
 def test_continuity_quadratic_healing():
     print("Testing Continuity Quadratic Healing (Non-Linear)...")

@@ -19,7 +19,7 @@ and embed linear invariants into the lines.
 
 import numpy as np
 from typing import List
-from fsc.fsc_structural import AlgebraicFormat
+from fsc.core.fsc_structural import AlgebraicFormat
 
 def protect_string(s: str, m: int = 251) -> dict:
     # Treat string as a sequence of integers

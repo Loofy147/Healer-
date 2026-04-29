@@ -1,6 +1,6 @@
 import numpy as np
-from fsc.fsc_block import FSCVolume
-from fsc.fsc_native import is_native_available
+from fsc.storage.fsc_block import FSCVolume
+from fsc.core.fsc_native import is_native_available
 
 def debug_scale():
     n_blocks = 1000

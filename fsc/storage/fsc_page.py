@@ -13,8 +13,8 @@ import struct
 import os
 import numpy as np
 from typing import List, Optional, Dict
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-from fsc.fsc_native import FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.core.fsc_native import FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 class FSCPageWriter:
     def __init__(self, schema: FSCSchema, page_size: int = 10):

@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.getcwd())
 
-from fsc.fsc_commercial import fsc_enterprise_audit, _AUDIT_CHAIN
+from fsc.enterprise.fsc_commercial import fsc_enterprise_audit, _AUDIT_CHAIN
 
 def test_enterprise_audit():
     print("Testing Enterprise Secure Audit Chain...")

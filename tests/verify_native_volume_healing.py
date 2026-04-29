@@ -5,8 +5,8 @@ Verification for C-accelerated RAID Volume healing.
 
 import numpy as np
 import time
-from fsc.fsc_block import FSCVolume
-from fsc.fsc_native import is_native_available
+from fsc.storage.fsc_block import FSCVolume
+from fsc.core.fsc_native import is_native_available
 
 def test_native_volume_healing():
     print("Testing C-accelerated RAID Volume Healing (Model 5 + erasure coding)")
