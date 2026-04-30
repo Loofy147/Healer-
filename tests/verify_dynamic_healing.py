@@ -3,8 +3,8 @@ import os
 import numpy as np
 sys.path.append(os.getcwd())
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-from fsc.fsc_dynamic import AdaptiveWeightEngine
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.advanced.fsc_dynamic import AdaptiveWeightEngine
 
 def test_dynamic_healing():
     print("=========================================================")

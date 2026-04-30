@@ -1,6 +1,6 @@
 import numpy as np
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-from fsc.fsc_native import FSC_SUCCESS, is_native_available, native_calculate_sum64, native_heal_single64
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.core.fsc_native import FSC_SUCCESS, is_native_available, native_calculate_sum64, native_heal_single64
 import os
 
 def test_native_64bit_acceleration():

@@ -6,8 +6,8 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 import numpy as np
 import struct
 from typing import List, Optional, Tuple, Dict
-from fsc.fsc_framework import solve_linear_system, gf_inv
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from fsc.core.fsc_framework import solve_linear_system, gf_inv
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
@@ -103,10 +103,10 @@ class FSCVolume:
     """
     Algebraic RAID Volume with Proactive Scrubbing (v7).
     """
-    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None):
+    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: int = 251):
         self.n_blocks, self.block_size, self.k_parity = n_blocks, block_size, k_parity
         self.n_data_blocks = n_blocks - k_parity
-        self.m = 251
+        self.m = modulus
 
         # Bolt Optimization: Support external buffers (e.g. mmap) for zero-copy
         if buffer is not None:

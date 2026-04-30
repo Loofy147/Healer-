@@ -1,15 +1,15 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 import sys
 import os
 import numpy as np
 sys.path.append(os.getcwd())
 
-import fsc.fsc_binary
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+import fsc.storage.fsc_binary
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 
 def test_native_acceleration():
     print("Testing Native Acceleration Integration...")
-    fsc.fsc_binary.FSC_COMMERCIAL_BUILD = True
+    fsc.storage.fsc_binary.FSC_COMMERCIAL_BUILD = True
 
     fields = [FSCField(f"f{i}", "INT32") for i in range(4)]
     schema = FSCSchema(fields)

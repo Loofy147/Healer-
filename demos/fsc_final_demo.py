@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -11,10 +11,10 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_framework import FSCFactory, FSCHealer, FSCAnalyzer
-from fsc.fsc_structural import FiberRecord, AlgebraicFormat, BalancedGroup
-from fsc.fsc_storage import StructuralLog
-from fsc.fsc_network import StructuralPacket
+from fsc.core.fsc_framework import FSCFactory, FSCHealer, FSCAnalyzer
+from fsc.core.fsc_structural import FiberRecord, AlgebraicFormat, BalancedGroup
+from fsc.storage.fsc_storage import StructuralLog
+from fsc.network.fsc_network import StructuralPacket
 
 def section(name):
     print("\n" + "━" * 60)

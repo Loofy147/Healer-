@@ -10,8 +10,8 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_binary import FSCField, FSCSchema
-from fsc.fsc_page import FSCPageWriter, FSCPageReader
+from fsc.storage.fsc_binary import FSCField, FSCSchema
+from fsc.storage.fsc_page import FSCPageWriter, FSCPageReader
 import os
 
 def test_2d_healing():

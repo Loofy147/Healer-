@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -10,7 +10,7 @@ PATENT PENDING: Industrial applications of these algebraic primitives
 for database pages, kernel block devices, and network protocols.
 """
 
-from fsc.fsc_network import StructuralPacket
+from fsc.network.fsc_network import StructuralPacket
 import random
 
 def test_network_healing():

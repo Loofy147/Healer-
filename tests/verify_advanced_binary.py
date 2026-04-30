@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -11,7 +11,7 @@ for database pages, kernel block devices, and network protocols.
 """
 
 import numpy as np
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 
 def test_model5_auto_localization():

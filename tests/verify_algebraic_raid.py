@@ -5,7 +5,7 @@ import numpy as np
 # Add parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fsc.fsc_block import FSCVolume
+from fsc.storage.fsc_block import FSCVolume
 
 def test_algebraic_raid():
     print("━━ TESTING ALGEBRAIC RAID (Multi-Block Erasure Recovery) ━━")

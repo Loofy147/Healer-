@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -18,7 +18,7 @@ to protect sensitive patient and scan metadata from corruption during
 transmission or PACS storage.
 """
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
 import os
 
 def demo_medical():

@@ -8,7 +8,7 @@ import mmap
 import numpy as np
 from typing import List, Optional, Dict
 from collections import OrderedDict
-from fsc.fsc_block import FSCBlock, FSCVolume
+from fsc.storage.fsc_block import FSCBlock, FSCVolume
 
 class PersistentFSCVolume:
     """

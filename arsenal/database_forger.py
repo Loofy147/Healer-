@@ -20,9 +20,9 @@ import numpy as np
 import sys
 import time
 from typing import List, Tuple, Optional
-from fsc.fsc_framework import solve_linear_system
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-from fsc.fsc_block import FSCVolume
+from fsc.core.fsc_framework import solve_linear_system
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+from fsc.storage.fsc_block import FSCVolume
 
 # Modulus for the demo - using 2^31-1 for INT64 dot compatibility
 P = 2147483647

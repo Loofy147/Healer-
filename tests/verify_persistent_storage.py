@@ -16,7 +16,7 @@ import numpy as np
 # Add parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fsc.fsc_persistent_storage import PersistentFSCVolume
+from fsc.storage.fsc_persistent_storage import PersistentFSCVolume
 
 def test_persistence():
     print("━━ TESTING PERSISTENT FSC STORAGE ━━")

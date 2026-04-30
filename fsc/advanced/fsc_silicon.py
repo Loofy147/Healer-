@@ -8,7 +8,7 @@ import time
 import random
 import hashlib
 from typing import Dict, List, Optional
-from fsc.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_silicon_verify_gate
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_silicon_verify_gate
 
 class ModularReductionGate:
     """

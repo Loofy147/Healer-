@@ -1,16 +1,16 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 import sys
 import os
 sys.path.append(os.getcwd())
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader, fsc_audit_log
-import fsc.fsc_binary
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader, fsc_audit_log
+import fsc.storage.fsc_binary
 
 def test_audit_log():
     print("Testing Enterprise Audit Logging...")
 
     # Enable commercial build for testing
-    fsc.fsc_binary.FSC_COMMERCIAL_BUILD = True
+    fsc.storage.fsc_binary.FSC_COMMERCIAL_BUILD = True
 
     fields = [FSCField("val", "UINT8")]
     schema = FSCSchema(fields)
@@ -33,7 +33,7 @@ def test_audit_log():
     assert reader.records[0, 0] == 100
 
     # Disable commercial build
-    fsc.fsc_binary.FSC_COMMERCIAL_BUILD = False
+    fsc.storage.fsc_binary.FSC_COMMERCIAL_BUILD = False
     print("\nNo audit logs should appear for the next healing:")
     reader.records[0, 0] = 0
     healed = reader.verify_and_heal(0)

@@ -21,7 +21,7 @@ without the client ever seeing the underlying Galois Field code.
 import time
 import json
 import numpy as np
-from fsc.fsc_structural import BalancedGroup
+from fsc.core.fsc_structural import BalancedGroup
 
 class FSCCloudGuard:
     def __init__(self):

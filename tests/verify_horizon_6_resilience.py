@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from fsc.fsc_mesh import TopologicalSharder, MeshNode
+from fsc.advanced.fsc_mesh import TopologicalSharder, MeshNode
 
 class TestResilience(unittest.TestCase):
     def test_mesh_raid(self):

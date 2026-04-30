@@ -1,4 +1,4 @@
-from fsc.fsc_native import FSC_SUCCESS
+from fsc.core.fsc_native import FSC_SUCCESS
 """
 FSC: Forward Sector Correction
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -18,7 +18,7 @@ Every field participates in multiple independent constraints.
 """
 
 from typing import List, Optional, Dict
-from fsc.fsc_structural import AlgebraicFormat
+from fsc.core.fsc_structural import AlgebraicFormat
 
 class StructuralPacket:
     """

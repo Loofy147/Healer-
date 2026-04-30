@@ -4,8 +4,8 @@ import struct
 import numpy as np
 sys.path.append(os.getcwd())
 
-from fsc.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
-import fsc.fsc_binary
+from fsc.storage.fsc_binary import FSCField, FSCSchema, FSCWriter, FSCReader
+import fsc.storage.fsc_binary
 
 def test_meta_healing():
     print("=========================================================")
@@ -13,7 +13,7 @@ def test_meta_healing():
     print("=========================================================\n")
 
     # Enable audit logs to see healing in action
-    fsc.fsc_binary.FSC_COMMERCIAL_BUILD = True
+    fsc.storage.fsc_binary.FSC_COMMERCIAL_BUILD = True
 
     fields = [FSCField("val", "UINT8")]
     schema = FSCSchema(fields)

@@ -18,8 +18,8 @@ This allows unique identification AND recovery of any single corrupted field.
 """
 
 from typing import List, Optional, Dict
-from fsc.fsc_structural import AlgebraicFormat
-from fsc.fsc_native import FSC_SUCCESS, FSC_ERR_INVALID
+from fsc.core.fsc_structural import AlgebraicFormat
+from fsc.core.fsc_native import FSC_SUCCESS, FSC_ERR_INVALID
 
 class StructuralLog:
     """
