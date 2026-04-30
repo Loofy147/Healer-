@@ -151,18 +151,53 @@ size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t bloc
 int fsc_volume_encode8(uint8_t* buffer, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus) {
     if (modulus <= 1) return FSC_SUCCESS;
     size_t n_data = n_blocks - k_parity;
-    for (size_t i = 0; i < n_data; i++) fsc_block_seal(buffer + i * block_size, block_size, (int64_t)i, modulus);
+    size_t d_len = block_size - 3;
+
+    // Seal data blocks in parallel
+    #pragma omp parallel for
+    for (size_t i = 0; i < n_data; i++) {
+        fsc_block_seal(buffer + i * block_size, block_size, (int64_t)i, modulus);
+    }
+
+    // Pre-calculate weights for each parity to avoid redundant power calculations
+    // weights[j][i] = (i+1)^j % modulus
+    int64_t* weights = (int64_t*)malloc(k_parity * n_data * sizeof(int64_t));
+    for (size_t j = 0; j < k_parity; j++) {
+        for (size_t i = 0; i < n_data; i++) {
+            int64_t w = 1;
+            for (size_t p = 0; p < j; p++) w = (w * (i + 1)) % modulus;
+            weights[j * n_data + i] = w;
+        }
+    }
+
+    // Calculate parity blocks
+    #pragma omp parallel for
     for (size_t j = 0; j < k_parity; j++) {
         uint8_t* parity_block = buffer + (n_data + j) * block_size;
         memset(parity_block, 0, block_size);
+
+        // Using a 64-bit accumulator per byte to minimize modulus operations
+        // This is safe because (255 * 250 * n_data) fits in 64-bit for reasonable n_data
+        int64_t* acc = (int64_t*)calloc(d_len, sizeof(int64_t));
+
         for (size_t i = 0; i < n_data; i++) {
             const uint8_t* data_block = buffer + i * block_size;
-            int64_t weight = 1;
-            for(size_t p=0; p<j; p++) weight = (weight * (i + 1)) % modulus;
-            for(size_t k=0; k<block_size-3; k++) parity_block[k] = (uint8_t)((parity_block[k] + data_block[k] * weight) % modulus);
+            int64_t w = weights[j * n_data + i];
+            if (w == 0) continue;
+            if (w == 1) {
+                for (size_t k = 0; k < d_len; k++) acc[k] += data_block[k];
+            } else {
+                for (size_t k = 0; k < d_len; k++) acc[k] += (int64_t)data_block[k] * w;
+            }
         }
+
+        for (size_t k = 0; k < d_len; k++) parity_block[k] = (uint8_t)(acc[k] % modulus);
+        free(acc);
+
         fsc_block_seal(parity_block, block_size, (int64_t)(n_data + j), modulus);
     }
+
+    free(weights);
     return FSC_SUCCESS;
 }
 

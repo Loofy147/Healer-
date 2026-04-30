@@ -10,34 +10,37 @@ from fsc.enterprise.fsc_config import SovereignConfig
 from fsc.core.fsc_native import is_native_available, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
+    _cache = {}
     """
     Represents a physical storage sector with internal FSC protection.
     Uses 3-constraint Model 5 for robust intra-sector healing.
     """
     def __init__(self, block_id: int, size: int = 512, m: Optional[int] = None, data: np.ndarray = None):
         self.block_id = block_id
-        self.size = size
         self.m = m or SovereignConfig.get_manifold_params()["modulus"]
         self.data_len = size - 3
         self.data = data if data is not None else np.zeros(size, dtype=np.uint8)
+        self.size = size
 
-        self.w = np.arange(1, size + 1, dtype=np.int64)
-        self.w2 = self.w ** 2
+        cache_key = (size, self.m)
+        if cache_key in FSCBlock._cache:
+            self.w, self.w2, self._w_data, self._w2_data, self._A_inv = FSCBlock._cache[cache_key]
+        else:
+            self.w = np.arange(1, size + 1, dtype=np.int64)
+            self.w2 = self.w ** 2
+            self._w_data = self.w[:self.data_len]
+            self._w2_data = self.w2[:self.data_len]
 
-        # Pre-slice weights for faster dot products in write()
-        self._w_data = self.w[:self.data_len]
-        self._w2_data = self.w2[:self.data_len]
-
-        # Bolt Optimization: Pre-calculate the modular inverse of the 3x3 constraint matrix
-        n1, n2, n3 = size - 2, size - 1, size
-        A = np.array([[1, 1, 1], [n1, n2, n3], [pow(n1, 2, self.m), pow(n2, 2, self.m), pow(n3, 2, self.m)]], dtype=np.int64)
-        I = np.eye(3, dtype=np.int64)
-        A_inv_rows = []
-        for i in range(3):
-            row_sol = solve_linear_system(A.tolist(), I[i].tolist(), self.m)
-            if row_sol is None: raise RuntimeError("Singular constraint matrix in FSCBlock")
-            A_inv_rows.append(row_sol)
-        self._A_inv = np.array(A_inv_rows, dtype=np.int64).T
+            n1, n2, n3 = size - 2, size - 1, size
+            A = np.array([[1, 1, 1], [n1, n2, n3], [pow(n1, 2, self.m), pow(n2, 2, self.m), pow(n3, 2, self.m)]], dtype=np.int64)
+            I = np.eye(3, dtype=np.int64)
+            A_inv_rows = []
+            for i in range(3):
+                row_sol = solve_linear_system(A.tolist(), I[i].tolist(), self.m)
+                if row_sol is None: raise RuntimeError("Singular constraint matrix in FSCBlock")
+                A_inv_rows.append(row_sol)
+            self._A_inv = np.array(A_inv_rows, dtype=np.int64).T
+            FSCBlock._cache[cache_key] = (self.w, self.w2, self._w_data, self._w2_data, self._A_inv)
 
     def write(self, payload: bytes):
         if is_native_available():
@@ -176,10 +179,10 @@ class FSCVolume:
             bad = remaining_bad
 
             if bad and len(bad) <= self.k_parity:
-                if native_heal_erasure8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, bad, self.m):
+                native_heal_erasure8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, bad, self.m)
+                # Verify if native healing actually worked (fallback if not)
+                if all(self.blocks[bi].verify() for bi in bad):
                     return internal_healed + len(bad)
-                else:
-                    return -1
         else:
             for i, b in enumerate(self.blocks):
                 if not b.verify():
