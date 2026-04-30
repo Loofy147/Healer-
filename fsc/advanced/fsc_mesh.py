@@ -8,6 +8,7 @@ import hashlib
 import random
 from typing import List, Dict, Optional
 from fsc.core.fsc_framework import solve_linear_system
+from fsc.enterprise.fsc_config import SovereignConfig
 
 class MeshNode:
     def __init__(self, node_id: str, coords: np.ndarray):
@@ -49,10 +50,10 @@ class ConsensusManifold:
         return secret
 
 class TopologicalSharder:
-    def __init__(self, dimension: int = 3, modulus: int = 251):
+    def __init__(self, dimension: int = 3, modulus: Optional[int] = None):
         self.nodes = []
         self.dimension = dimension
-        self.modulus = modulus
+        self.modulus = modulus or SovereignConfig.get_manifold_params()["modulus"]
 
     def add_node(self, node: MeshNode):
         self.nodes.append(node)
@@ -131,9 +132,9 @@ class TopologicalSharder:
         return full_bytes[:original_len] if original_len > 0 else full_bytes
 
 class SelfSynthesizingNode(MeshNode):
-    def __init__(self, node_id: str, coords: np.ndarray, modulus: int = 251):
+    def __init__(self, node_id: str, coords: np.ndarray, modulus: Optional[int] = None):
         super().__init__(node_id, coords)
-        self.modulus = modulus
+        self.modulus = modulus or SovereignConfig.get_manifold_params()["modulus"]
         self.local_weights = None
 
     def synthesize_weights(self):

@@ -87,9 +87,13 @@ class ZKHealer:
         return "PROOF_FAILURE"
 
     def verify_proof(self, proof: str, original_hash: str) -> bool:
+        if not proof or len(proof) != 64: return False
+        try:
+            int(proof, 16)
+        except ValueError:
+            return False
         expected_proof = hashlib.sha256(f"ZK_PROOF_{original_hash}".encode()).hexdigest()
         return proof == expected_proof
-
 class LatticeErasureCoding:
     """
     Quantum-resistant RAID (Horizon 5).
