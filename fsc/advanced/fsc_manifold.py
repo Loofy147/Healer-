@@ -4,6 +4,7 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 
 import numpy as np
+import hashlib
 from typing import List, Dict, Tuple, Optional
 from fsc.core.fsc_framework import gf_inv
 from fsc.enterprise.fsc_config import SovereignConfig
@@ -16,7 +17,12 @@ class LayeredManifold:
     """
     def __init__(self, moduli: Optional[List[int]] = None):
         self.moduli = moduli or [SovereignConfig.get_manifold_params()["modulus"], 2147483647]
-        self.weights = [np.random.randint(1, m, 1024, dtype=np.int64) for m in self.moduli]
+        # Use a deterministic seed for weight generation in this manifold instance
+        # In a real system, the seed would be stored in the file header.
+        self.weights = []
+        for m in self.moduli:
+            np.random.seed(42) # Deterministic weights for LayeredManifold prototype
+            self.weights.append(np.random.randint(1, m, 1024, dtype=np.int64))
 
     def seal_record(self, data: np.ndarray) -> List[int]:
         """Creates multiple syndromes across layered manifolds."""

@@ -1,5 +1,5 @@
 # FSC Framework: Method Signatures Audit
-Generated on: Thu Apr 30 14:41:38 UTC 2026
+Generated on: Thu Apr 30 16:45:06 UTC 2026
 
  - fsc/core/fsc_framework.py:15:class FSCDescriptor:
  - fsc/core/fsc_framework.py:17:    def __init__(self, name: str, field: str, n_elements: int,
@@ -69,11 +69,11 @@ Generated on: Thu Apr 30 14:41:38 UTC 2026
  - fsc/network/fsc_udp.py:58:    def __init__(self, port: int, group_size: int = 5):
  - fsc/network/fsc_udp.py:66:    def listen(self, count: int):
  - fsc/network/fsc_udp.py:95:    def _try_heal(self, group_id: int):
- - fsc/network/fsc_network.py:23:class StructuralPacket:
- - fsc/network/fsc_network.py:30:    def __init__(self, m: int = 251):
- - fsc/network/fsc_network.py:33:    def _get_format(self) -> AlgebraicFormat:
- - fsc/network/fsc_network.py:50:    def build(self, src_id: int, dst_id: int):
- - fsc/network/fsc_network.py:104:    def verify_and_heal(self, header_fields: Dict[str, int]) -> Optional[Dict[str, int]]:
+ - fsc/network/fsc_network.py:24:class StructuralPacket:
+ - fsc/network/fsc_network.py:31:    def __init__(self, m: Optional[int] = None):
+ - fsc/network/fsc_network.py:34:    def _get_format(self) -> AlgebraicFormat:
+ - fsc/network/fsc_network.py:51:    def build(self, src_id: int, dst_id: int):
+ - fsc/network/fsc_network.py:88:    def verify_and_heal(self, header_fields: Dict[str, int]) -> Optional[Dict[str, int]]:
  - fsc/network/fsc_streaming.py:37:class SlidingWindowFSC:
  - fsc/network/fsc_streaming.py:42:    def __init__(self, window_size: int, fields: List[str]):
  - fsc/network/fsc_streaming.py:49:    def ingest(self, record: dict) -> dict:
@@ -100,17 +100,15 @@ Generated on: Thu Apr 30 14:41:38 UTC 2026
  - fsc/advanced/fsc_domains.py:277:    def post(self, account, amount, entry_type):
  - fsc/advanced/fsc_domains.py:282:    def verify(self): return self.invariant == 0
  - fsc/advanced/fsc_domains.py:284:    def recover_entry(self, corrupt_idx):
- - fsc/advanced/fsc_manifold.py:10:class LayeredManifold:
- - fsc/advanced/fsc_manifold.py:16:    def __init__(self, moduli: List[int] = [251, 2147483647]):
- - fsc/advanced/fsc_manifold.py:20:    def seal_record(self, data: np.ndarray) -> List[int]:
- - fsc/advanced/fsc_manifold.py:29:    def verify_record(self, data: np.ndarray, syndromes: List[int]) -> bool:
- - fsc/advanced/fsc_manifold.py:38:    def heal_layered(self, data: np.ndarray, syndromes: List[int], corrupted_idx: int) -> bool:
- - fsc/advanced/fsc_multifault.py:76:class MultiFaultFSC:
- - fsc/advanced/fsc_multifault.py:89:    def __init__(self, n_data: int, k_faults: int, p: int = 251):
- - fsc/advanced/fsc_multifault.py:97:    def encode(self, data: list) -> list:
- - fsc/advanced/fsc_multifault.py:107:    def recover(self, record: list, corrupted_indices: list) -> list:
- - fsc/advanced/fsc_multifault.py:148:    def is_valid(self, record: list) -> bool:
- - fsc/advanced/fsc_multifault.py:157:    def detect_corruptions(self, record: list) -> list:
+ - fsc/advanced/fsc_manifold.py:12:class LayeredManifold:
+ - fsc/advanced/fsc_manifold.py:18:    def __init__(self, moduli: Optional[List[int]] = None):
+ - fsc/advanced/fsc_manifold.py:27:    def seal_record(self, data: np.ndarray) -> List[int]:
+ - fsc/advanced/fsc_manifold.py:36:    def verify_record(self, data: np.ndarray, syndromes: List[int]) -> bool:
+ - fsc/advanced/fsc_manifold.py:45:    def heal_layered(self, data: np.ndarray, syndromes: List[int], corrupted_idx: int) -> bool:
+ - fsc/advanced/fsc_multifault.py:11:class MultiFaultSolver:
+ - fsc/advanced/fsc_multifault.py:16:    def __init__(self, n_data: int, k_faults: int, p: Optional[int] = None):
+ - fsc/advanced/fsc_multifault.py:21:    def encode(self, data: np.ndarray) -> np.ndarray:
+ - fsc/advanced/fsc_multifault.py:35:    def solve_erasures(self, codeword: np.ndarray, erased_indices: List[int]) -> np.ndarray:
  - fsc/advanced/fsc_cascade.py:16:class CascadeHealer:
  - fsc/advanced/fsc_cascade.py:24:    def __init__(self):
  - fsc/advanced/fsc_cascade.py:28:    def add_record(self, rid: int, fields: List[int]):
@@ -118,48 +116,49 @@ Generated on: Thu Apr 30 14:41:38 UTC 2026
  - fsc/advanced/fsc_cascade.py:41:    def get_value(self, rid, fidx):
  - fsc/advanced/fsc_cascade.py:44:    def set_value(self, rid, fidx, val):
  - fsc/advanced/fsc_cascade.py:47:    def heal_cascade(self, known_corrupted: Set[tuple]):
- - fsc/advanced/fsc_mesh.py:12:class MeshNode:
- - fsc/advanced/fsc_mesh.py:13:    def __init__(self, node_id: str, coords: np.ndarray):
- - fsc/advanced/fsc_mesh.py:18:    def distance_to(self, target_coords: np.ndarray) -> float:
- - fsc/advanced/fsc_mesh.py:21:class ConsensusManifold:
- - fsc/advanced/fsc_mesh.py:22:    def __init__(self, n_nodes: int, threshold: int, modulus: int = 12289):
- - fsc/advanced/fsc_mesh.py:27:    def propose_value(self, value: int) -> List[int]:
- - fsc/advanced/fsc_mesh.py:37:    def reach_consensus(self, shares: Dict[int, int]) -> Optional[int]:
- - fsc/advanced/fsc_mesh.py:51:class TopologicalSharder:
- - fsc/advanced/fsc_mesh.py:52:    def __init__(self, dimension: int = 3, modulus: int = 251):
- - fsc/advanced/fsc_mesh.py:57:    def add_node(self, node: MeshNode):
- - fsc/advanced/fsc_mesh.py:60:    def _hash_to_manifold(self, data_id: str) -> np.ndarray:
- - fsc/advanced/fsc_mesh.py:68:    def shard_resilient(self, data_id: str, payload: bytes, k_data: int = 3, m_parity: int = 2) -> Dict[str, bytes]:
- - fsc/advanced/fsc_mesh.py:88:    def reconstruct_payload(self, data_id: str, shard_data: Dict[str, bytes], k_data: int = 3, original_len: int = 0) -> bytes:
- - fsc/advanced/fsc_mesh.py:133:class SelfSynthesizingNode(MeshNode):
- - fsc/advanced/fsc_mesh.py:134:    def __init__(self, node_id: str, coords: np.ndarray, modulus: int = 251):
- - fsc/advanced/fsc_mesh.py:139:    def synthesize_weights(self):
- - fsc/advanced/fsc_mesh.py:151:    def verify_local_integrity(self, data_id: str) -> bool:
- - fsc/advanced/fsc_silicon.py:13:class ModularReductionGate:
- - fsc/advanced/fsc_silicon.py:18:    def __init__(self, modulus: int = 251):
- - fsc/advanced/fsc_silicon.py:23:    def reduce(self, x: int) -> int:
- - fsc/advanced/fsc_silicon.py:31:class GALSSolver:
- - fsc/advanced/fsc_silicon.py:36:    def __init__(self, n_islands: int = 4, modulus: int = 251):
- - fsc/advanced/fsc_silicon.py:41:    def _async_delay(self):
- - fsc/advanced/fsc_silicon.py:45:    def parallel_verify(self, data: np.ndarray, rom_weights: np.ndarray, target: int) -> bool:
- - fsc/advanced/fsc_silicon.py:61:class PhysicalUnclonableFunction:
- - fsc/advanced/fsc_silicon.py:66:    def __init__(self, device_id: str):
- - fsc/advanced/fsc_silicon.py:71:    def challenge(self, nonce: bytes) -> bytes:
- - fsc/advanced/fsc_silicon.py:75:class SiliconEFuse:
- - fsc/advanced/fsc_silicon.py:80:    def __init__(self, n_bits: int = 32):
- - fsc/advanced/fsc_silicon.py:83:    def blow_fuse(self, bit_idx: int):
- - fsc/advanced/fsc_silicon.py:87:    def is_blown(self, bit_idx: int) -> bool:
- - fsc/advanced/fsc_silicon.py:90:    def get_state_hash(self) -> str:
- - fsc/advanced/fsc_silicon.py:93:class FSCSiliconCore:
- - fsc/advanced/fsc_silicon.py:94:    def __init__(self, modulus: int = 251, device_id: str = "DEFAULT_HW"):
- - fsc/advanced/fsc_silicon.py:101:    def _gate_mod_inv(self, a: int) -> int:
- - fsc/advanced/fsc_silicon.py:104:    def verify_gate(self, data: np.ndarray, target: int) -> bool:
- - fsc/advanced/fsc_silicon.py:110:    def heal_gate(self, data: np.ndarray, target: int, corrupted_idx: int) -> int:
- - fsc/advanced/fsc_silicon.py:121:class FSCSiliconBlackbox:
- - fsc/advanced/fsc_silicon.py:122:    def __init__(self, device_id: str = "HW_PROD_001"):
- - fsc/advanced/fsc_silicon.py:126:    def lock_hardware(self):
- - fsc/advanced/fsc_silicon.py:131:    def get_integrity_signature(self, nonce: bytes) -> bytes:
- - fsc/advanced/fsc_silicon.py:135:    def process_signal(self, buffer: np.ndarray, target: int):
+ - fsc/advanced/fsc_mesh.py:13:class MeshNode:
+ - fsc/advanced/fsc_mesh.py:14:    def __init__(self, node_id: str, coords: np.ndarray):
+ - fsc/advanced/fsc_mesh.py:19:    def distance_to(self, target_coords: np.ndarray) -> float:
+ - fsc/advanced/fsc_mesh.py:22:class ConsensusManifold:
+ - fsc/advanced/fsc_mesh.py:23:    def __init__(self, n_nodes: int, threshold: int, modulus: int = 12289):
+ - fsc/advanced/fsc_mesh.py:28:    def propose_value(self, value: int) -> List[int]:
+ - fsc/advanced/fsc_mesh.py:38:    def reach_consensus(self, shares: Dict[int, int]) -> Optional[int]:
+ - fsc/advanced/fsc_mesh.py:52:class TopologicalSharder:
+ - fsc/advanced/fsc_mesh.py:53:    def __init__(self, dimension: int = 3, modulus: Optional[int] = None):
+ - fsc/advanced/fsc_mesh.py:58:    def add_node(self, node: MeshNode):
+ - fsc/advanced/fsc_mesh.py:61:    def _hash_to_manifold(self, data_id: str) -> np.ndarray:
+ - fsc/advanced/fsc_mesh.py:69:    def find_nodes_for_data(self, data_id: str, k: int = 3) -> List[MeshNode]:
+ - fsc/advanced/fsc_mesh.py:79:    def shard_resilient(self, data_id: str, payload: bytes, k_data: int = 3, m_parity: int = 2) -> Dict[str, bytes]:
+ - fsc/advanced/fsc_mesh.py:99:    def reconstruct_payload(self, data_id: str, shard_data: Dict[str, bytes], k_data: int = 3, original_len: int = 0) -> bytes:
+ - fsc/advanced/fsc_mesh.py:140:class SelfSynthesizingNode(MeshNode):
+ - fsc/advanced/fsc_mesh.py:141:    def __init__(self, node_id: str, coords: np.ndarray, modulus: Optional[int] = None):
+ - fsc/advanced/fsc_mesh.py:146:    def synthesize_weights(self):
+ - fsc/advanced/fsc_mesh.py:158:    def verify_local_integrity(self, data_id: str) -> bool:
+ - fsc/advanced/fsc_silicon.py:14:class ModularReductionGate:
+ - fsc/advanced/fsc_silicon.py:19:    def __init__(self, modulus: Optional[int] = None):
+ - fsc/advanced/fsc_silicon.py:24:    def reduce(self, x: int) -> int:
+ - fsc/advanced/fsc_silicon.py:32:class GALSSolver:
+ - fsc/advanced/fsc_silicon.py:37:    def __init__(self, n_islands: int = 4, modulus: Optional[int] = None):
+ - fsc/advanced/fsc_silicon.py:42:    def _async_delay(self):
+ - fsc/advanced/fsc_silicon.py:46:    def parallel_verify(self, data: np.ndarray, rom_weights: np.ndarray, target: int) -> bool:
+ - fsc/advanced/fsc_silicon.py:62:class PhysicalUnclonableFunction:
+ - fsc/advanced/fsc_silicon.py:67:    def __init__(self, device_id: str):
+ - fsc/advanced/fsc_silicon.py:72:    def challenge(self, nonce: bytes) -> bytes:
+ - fsc/advanced/fsc_silicon.py:76:class SiliconEFuse:
+ - fsc/advanced/fsc_silicon.py:81:    def __init__(self, n_bits: int = 32):
+ - fsc/advanced/fsc_silicon.py:84:    def blow_fuse(self, bit_idx: int):
+ - fsc/advanced/fsc_silicon.py:88:    def is_blown(self, bit_idx: int) -> bool:
+ - fsc/advanced/fsc_silicon.py:91:    def get_state_hash(self) -> str:
+ - fsc/advanced/fsc_silicon.py:94:class FSCSiliconCore:
+ - fsc/advanced/fsc_silicon.py:95:    def __init__(self, modulus: Optional[int] = None, device_id: str = "DEFAULT_HW"):
+ - fsc/advanced/fsc_silicon.py:102:    def _gate_mod_inv(self, a: int) -> int:
+ - fsc/advanced/fsc_silicon.py:105:    def verify_gate(self, data: np.ndarray, target: int) -> bool:
+ - fsc/advanced/fsc_silicon.py:111:    def heal_gate(self, data: np.ndarray, target: int, corrupted_idx: int) -> int:
+ - fsc/advanced/fsc_silicon.py:122:class FSCSiliconBlackbox:
+ - fsc/advanced/fsc_silicon.py:123:    def __init__(self, device_id: str = "HW_PROD_001"):
+ - fsc/advanced/fsc_silicon.py:127:    def lock_hardware(self):
+ - fsc/advanced/fsc_silicon.py:132:    def get_integrity_signature(self, nonce: bytes) -> bytes:
+ - fsc/advanced/fsc_silicon.py:136:    def process_signal(self, buffer: np.ndarray, target: int):
  - fsc/advanced/fsc_quantum.py:11:class LatticeIntegrity:
  - fsc/advanced/fsc_quantum.py:12:    def __init__(self, n: int = 256, q: int = 12289):
  - fsc/advanced/fsc_quantum.py:17:    def _poly_mul(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -174,21 +173,25 @@ Generated on: Thu Apr 30 14:41:38 UTC 2026
  - fsc/advanced/fsc_quantum.py:61:    def __init__(self, n: int = 256, q: int = 12289):
  - fsc/advanced/fsc_quantum.py:66:    def commit(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
  - fsc/advanced/fsc_quantum.py:73:    def verify(self, commitment: np.ndarray, data: np.ndarray, blinding: np.ndarray) -> bool:
- - fsc/advanced/fsc_quantum.py:79:class ZKHealer:
- - fsc/advanced/fsc_quantum.py:80:    def __init__(self, modulus: int = 12289):
- - fsc/advanced/fsc_quantum.py:83:    def prove_healing(self, original_hash: str, healed_data: np.ndarray) -> str:
- - fsc/advanced/fsc_quantum.py:89:    def verify_proof(self, proof: str, original_hash: str) -> bool:
- - fsc/advanced/fsc_quantum.py:93:class LatticeErasureCoding:
- - fsc/advanced/fsc_quantum.py:98:    def __init__(self, n: int = 256, q: int = 12289):
- - fsc/advanced/fsc_quantum.py:103:    def encode_parity(self, data_shards: List[np.ndarray]) -> List[np.ndarray]:
- - fsc/advanced/fsc_quantum.py:113:    def recover_shard(self, data_shards: List[Optional[np.ndarray]], parity_shards: List[np.ndarray],
+ - fsc/advanced/fsc_quantum.py:79:class PolynomialCommitment:
+ - fsc/advanced/fsc_quantum.py:84:    def __init__(self, n: int = 256, q: int = 12289):
+ - fsc/advanced/fsc_quantum.py:88:    def commit(self, coeffs: np.ndarray) -> int:
+ - fsc/advanced/fsc_quantum.py:95:    def prove_eval(self, coeffs: np.ndarray, z: int) -> Tuple[int, int]:
+ - fsc/advanced/fsc_quantum.py:104:class ZKHealer:
+ - fsc/advanced/fsc_quantum.py:105:    def __init__(self, modulus: int = 12289):
+ - fsc/advanced/fsc_quantum.py:109:    def prove_healing(self, original_hash: str, healed_data: np.ndarray) -> str:
+ - fsc/advanced/fsc_quantum.py:122:    def verify_proof(self, proof: str, original_hash: str) -> bool:
+ - fsc/advanced/fsc_quantum.py:145:class LatticeErasureCoding:
+ - fsc/advanced/fsc_quantum.py:150:    def __init__(self, n: int = 256, q: int = 12289):
+ - fsc/advanced/fsc_quantum.py:155:    def encode_parity(self, data_shards: List[np.ndarray]) -> List[np.ndarray]:
+ - fsc/advanced/fsc_quantum.py:165:    def recover_shard(self, data_shards: List[Optional[np.ndarray]], parity_shards: List[np.ndarray],
  - fsc/advanced/fsc_dynamic.py:9:class AdaptiveWeightEngine:
  - fsc/advanced/fsc_dynamic.py:15:    def calculate_weights(data_types: List[str], base_modulus: int, seed: int = 1) -> np.ndarray:
- - fsc/storage/fsc_database.py:23:class StructuralTable:
- - fsc/storage/fsc_database.py:29:    def __init__(self, rows: int, cols: int, m: int = 251):
- - fsc/storage/fsc_database.py:38:    def set_data(self, source_data: List[List[int]]):
- - fsc/storage/fsc_database.py:60:    def corrupt(self, row: int, col: int, bad_val: int):
- - fsc/storage/fsc_database.py:63:    def verify_and_heal(self) -> List[Dict]:
+ - fsc/storage/fsc_database.py:24:class StructuralTable:
+ - fsc/storage/fsc_database.py:30:    def __init__(self, rows: int, cols: int, m: Optional[int] = None):
+ - fsc/storage/fsc_database.py:39:    def set_data(self, source_data: List[List[int]]):
+ - fsc/storage/fsc_database.py:61:    def corrupt(self, row: int, col: int, bad_val: int):
+ - fsc/storage/fsc_database.py:64:    def verify_and_heal(self) -> List[Dict]:
  - fsc/storage/fsc_page.py:19:class FSCPageWriter:
  - fsc/storage/fsc_page.py:20:    def __init__(self, schema: FSCSchema, page_size: int = 10):
  - fsc/storage/fsc_page.py:24:    def write_page(self, data_block: List[List[int]], filename: str):
@@ -205,42 +208,43 @@ Generated on: Thu Apr 30 14:41:38 UTC 2026
  - fsc/storage/fsc_persistent_storage.py:57:    def corrupt_disk(self, block_idx: int, byte_offset: int, val: int):
  - fsc/storage/fsc_persistent_storage.py:62:    def close(self):
  - fsc/storage/fsc_persistent_storage.py:66:    def __del__(self):
- - fsc/storage/fsc_binary.py:29:class FSCField:
- - fsc/storage/fsc_binary.py:31:    def __init__(self, name: str, ftype: str):
- - fsc/storage/fsc_binary.py:36:class FSCConstraint:
- - fsc/storage/fsc_binary.py:37:    def __init__(self, weights: Any, target: Optional[int] = None, is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
- - fsc/storage/fsc_binary.py:45:class FSCSchema:
- - fsc/storage/fsc_binary.py:46:    def __init__(self, fields: List[FSCField]):
- - fsc/storage/fsc_binary.py:50:    def add_constraint(self, weights: List[int], target: Optional[int] = None, is_fiber: bool = False, modulus: Optional[int] = None, label: str = ""):
- - fsc/storage/fsc_binary.py:57:class FSCWriter:
- - fsc/storage/fsc_binary.py:58:    def __init__(self, schema: FSCSchema):
- - fsc/storage/fsc_binary.py:62:    def add_record(self, data: Any): self.add_records([data])
- - fsc/storage/fsc_binary.py:63:    def add_records(self, data: Any):
- - fsc/storage/fsc_binary.py:79:    def write(self, filename: str):
- - fsc/storage/fsc_binary.py:106:class FSCReader:
- - fsc/storage/fsc_binary.py:107:    def __init__(self, filename: str):
- - fsc/storage/fsc_binary.py:112:    def get_data(self) -> List[List[int]]: return self.records[:, :len(self.data_fields)].tolist()
- - fsc/storage/fsc_binary.py:113:    def _read_file(self):
- - fsc/storage/fsc_binary.py:166:    def _verify_record(self, r_idx: int, data: np.ndarray) -> bool:
- - fsc/storage/fsc_binary.py:174:    def verify_and_heal(self, r_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> int:
- - fsc/storage/fsc_binary.py:260:    def verify_all_records(self) -> np.ndarray:
+ - fsc/storage/fsc_binary.py:19:class FSCField:
+ - fsc/storage/fsc_binary.py:21:    def __init__(self, name: str, ftype: str):
+ - fsc/storage/fsc_binary.py:24:class FSCConstraint:
+ - fsc/storage/fsc_binary.py:25:    def __init__(self, weights: Any, target: Optional[int] = None, is_fiber: bool = False, label: str = "", modulus: Optional[int] = None):
+ - fsc/storage/fsc_binary.py:29:class FSCSchema:
+ - fsc/storage/fsc_binary.py:30:    def __init__(self, fields: List[FSCField]):
+ - fsc/storage/fsc_binary.py:33:    def add_constraint(self, weights: List[int], target: Optional[int] = None, is_fiber: bool = False, modulus: Optional[int] = None, label: str = ""):
+ - fsc/storage/fsc_binary.py:36:class FSCWriter:
+ - fsc/storage/fsc_binary.py:37:    def __init__(self, schema: FSCSchema):
+ - fsc/storage/fsc_binary.py:42:    def enable_layered_protection(self):
+ - fsc/storage/fsc_binary.py:46:    def add_record(self, data: Any):
+ - fsc/storage/fsc_binary.py:49:    def add_records(self, data: Any):
+ - fsc/storage/fsc_binary.py:60:    def write(self, filename: str):
+ - fsc/storage/fsc_binary.py:96:class FSCReader:
+ - fsc/storage/fsc_binary.py:97:    def __init__(self, filename: str):
+ - fsc/storage/fsc_binary.py:105:    def get_data(self) -> List[List[int]]: return self.records[:, :len(self.data_fields)].tolist()
+ - fsc/storage/fsc_binary.py:107:    def _read_file(self):
+ - fsc/storage/fsc_binary.py:171:    def _verify_record(self, r_idx: int, data: np.ndarray) -> bool:
+ - fsc/storage/fsc_binary.py:185:    def verify_and_heal(self, r_idx: int, corrupted_field_idx: int = -1, corrupted_indices: List[int] = None) -> int:
+ - fsc/storage/fsc_binary.py:261:    def verify_all_records(self) -> np.ndarray:
  - fsc/storage/fsc_block.py:12:class FSCBlock:
- - fsc/storage/fsc_block.py:17:    def __init__(self, block_id: int, size: int = 512, m: int = 251, data: np.ndarray = None):
+ - fsc/storage/fsc_block.py:17:    def __init__(self, block_id: int, size: int = 512, m: Optional[int] = None, data: np.ndarray = None):
  - fsc/storage/fsc_block.py:42:    def write(self, payload: bytes):
  - fsc/storage/fsc_block.py:72:    def verify(self) -> bool:
  - fsc/storage/fsc_block.py:81:    def heal(self) -> bool:
  - fsc/storage/fsc_block.py:102:class FSCVolume:
- - fsc/storage/fsc_block.py:106:    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: int = 251):
+ - fsc/storage/fsc_block.py:106:    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: Optional[int] = None):
  - fsc/storage/fsc_block.py:129:    def write_volume(self, data: bytes):
  - fsc/storage/fsc_block.py:159:    def heal_volume(self) -> int:
  - fsc/storage/fsc_block.py:225:    def scrub(self) -> Dict:
  - fsc/storage/fsc_block.py:231:    def read_volume(self) -> bytes:
- - fsc/storage/fsc_storage.py:24:class StructuralLog:
- - fsc/storage/fsc_storage.py:29:    def __init__(self, m: int = 251, fields_per_record: int = 4):
- - fsc/storage/fsc_storage.py:34:    def _get_format_for_pos(self, pos: int) -> AlgebraicFormat:
- - fsc/storage/fsc_storage.py:52:    def append(self, data: List[int]):
- - fsc/storage/fsc_storage.py:95:    def verify_and_heal(self, index: int) -> int:
- - fsc/storage/fsc_storage.py:119:    def __repr__(self):
+ - fsc/storage/fsc_storage.py:25:class StructuralLog:
+ - fsc/storage/fsc_storage.py:30:    def __init__(self, m: Optional[int] = None, fields_per_record: int = 4):
+ - fsc/storage/fsc_storage.py:35:    def _get_format_for_pos(self, pos: int) -> AlgebraicFormat:
+ - fsc/storage/fsc_storage.py:53:    def append(self, data: List[int]):
+ - fsc/storage/fsc_storage.py:96:    def verify_and_heal(self, index: int) -> int:
+ - fsc/storage/fsc_storage.py:120:    def __repr__(self):
  - fsc/enterprise/fsc_commercial.py:14:class SecureAuditChain:
  - fsc/enterprise/fsc_commercial.py:19:    def __init__(self):
  - fsc/enterprise/fsc_commercial.py:23:    def log_event(self, event_type: str, details: dict):

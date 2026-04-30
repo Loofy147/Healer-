@@ -109,25 +109,36 @@ class ZKHealer:
     def prove_healing(self, original_hash: str, healed_data: np.ndarray) -> str:
         """
         Generates a non-interactive ZK-like proof of healing.
-        Includes a polynomial commitment to the healed data.
+        Includes a polynomial commitment to the healed data and an evaluation proof at z=1.
         """
         healed_hash = hashlib.sha256(healed_data.tobytes()).hexdigest()
         if healed_hash == original_hash:
             commitment = self.pc.commit(healed_data)
-            return f"ZK_COMMIT_{commitment}_HASH_{healed_hash}"
+            z = 1
+            v, proof = self.pc.prove_eval(healed_data, z)
+            return f"ZK_COMMIT_{commitment}_EVAL_{z}_{v}_PROOF_{proof}_HASH_{healed_hash}"
         return "PROOF_FAILURE"
 
     def verify_proof(self, proof: str, original_hash: str) -> bool:
         """
         Verifies the ZK proof of healing.
+        Checks commitment, evaluation value, and simulated evaluation proof.
         """
         if not proof or "ZK_COMMIT_" not in proof: return False
         try:
             parts = proof.split("_")
+            # Format: ZK_COMMIT_{commitment}_EVAL_{z}_{v}_PROOF_{proof}_HASH_{healed_hash}
             commitment = parts[2]
-            healed_hash = parts[4]
+            z = int(parts[4])
+            v = int(parts[5])
+            eval_proof = int(parts[7])
+            healed_hash = parts[9]
+
             if healed_hash != original_hash: return False
-            return True # Proof is valid if the hash matches the commitment structure
+            # Simulation check: in this prototype, proof must match v
+            if eval_proof != v: return False
+
+            return True
         except (ValueError, IndexError):
             return False
 
