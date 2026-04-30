@@ -8,6 +8,7 @@ COMMERCIAL LICENSE: Required for proprietary/enterprise use.
 PATENT PENDING: Industrial applications of these algebraic primitives
 for database pages, kernel block devices, and network protocols.
 """
+from fsc.enterprise.fsc_config import SovereignConfig
 import os
 import numpy as np
 import struct, io
@@ -166,7 +167,7 @@ class FSCReader:
     def _verify_record(self, r_idx: int, data: np.ndarray) -> bool:
         rec = self.records[r_idx]
         for i, c in enumerate(self.constraints):
-            target = (r_idx % (c.modulus or 251)) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
+            target = (r_idx % (c.modulus or SovereignConfig.get_manifold_params()["modulus"])) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
             actual = np.dot(data, c.weights)
             if c.modulus: actual %= c.modulus
             if actual != target: return False
@@ -181,7 +182,7 @@ class FSCReader:
         syndromes = []
         failed = []
         for i, c in enumerate(self.constraints):
-            target = (r_idx % (c.modulus or 251)) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
+            target = (r_idx % (c.modulus or SovereignConfig.get_manifold_params()["modulus"])) if c.is_fiber else (c.target if c.target is not None else rec[c.stored_field_idx])
             actual = np.dot(data_np, c.weights)
             if c.modulus: actual %= c.modulus; synd = (target - actual) % c.modulus
             else: synd = target - actual
@@ -260,7 +261,7 @@ class FSCReader:
     def verify_all_records(self) -> np.ndarray:
         if not self.constraints or len(self.records) == 0: return np.ones(len(self.records), dtype=bool)
         data_matrix = self.records[:, :len(self.data_fields)]; record_indices = np.arange(len(self.records)).reshape(-1, 1)
-        fiber_mod = np.where(self._moduli != 0, self._moduli, 251); fiber_targets = record_indices % fiber_mod
+        fiber_mod = np.where(self._moduli != 0, self._moduli, SovereignConfig.get_manifold_params()["modulus"]); fiber_targets = record_indices % fiber_mod
         targets = np.where(self._is_fiber, fiber_targets, np.where(self._has_fixed_target, self._fixed_targets, self.records[:, self._stored_indices]))
         actuals = data_matrix @ self._weight_matrix.T
         for mod_val in np.unique(self._moduli):

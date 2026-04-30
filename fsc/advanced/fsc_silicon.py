@@ -9,16 +9,17 @@ import random
 import hashlib
 from typing import Dict, List, Optional
 from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_silicon_verify_gate
+from fsc.enterprise.fsc_config import SovereignConfig
 
 class ModularReductionGate:
     """
     Simulation of a hardware-optimized modular reduction gate.
     Utilizes bit-level Barrett reduction logic.
     """
-    def __init__(self, modulus: int = 251):
-        self.modulus = modulus
-        self.k = int(np.ceil(np.log2(modulus)))
-        self.m = (2**(2*self.k)) // modulus
+    def __init__(self, modulus: Optional[int] = None):
+        self.modulus = modulus or SovereignConfig.get_manifold_params()["modulus"]
+        self.k = int(np.ceil(np.log2(self.modulus)))
+        self.m = (2**(2*self.k)) // self.modulus
 
     def reduce(self, x: int) -> int:
         """Simulates Barrett reduction gate path."""
@@ -33,10 +34,10 @@ class GALSSolver:
     Globally Asynchronous Locally Synchronous (GALS) solver architecture.
     Simulates multiple asynchronous 'islands' of logic with handshaking.
     """
-    def __init__(self, n_islands: int = 4, modulus: int = 251):
+    def __init__(self, n_islands: int = 4, modulus: Optional[int] = None):
         self.n_islands = n_islands
-        self.modulus = modulus
-        self.reduction_gate = ModularReductionGate(modulus)
+        self.modulus = modulus or SovereignConfig.get_manifold_params()["modulus"]
+        self.reduction_gate = ModularReductionGate(self.modulus)
 
     def _async_delay(self):
         """Simulates asynchronous gate delay variability."""
@@ -91,8 +92,8 @@ class SiliconEFuse:
         return hashlib.sha256(self.fuses.tobytes()).hexdigest()
 
 class FSCSiliconCore:
-    def __init__(self, modulus: int = 251, device_id: str = "DEFAULT_HW"):
-        self.modulus = int(modulus)
+    def __init__(self, modulus: Optional[int] = None, device_id: str = "DEFAULT_HW"):
+        self.modulus = int(modulus or SovereignConfig.get_manifold_params()["modulus"])
         self.rom_weights = np.arange(1, 4097, dtype=np.uint8)
         self.gals_solver = GALSSolver(modulus=self.modulus)
         self.puf = PhysicalUnclonableFunction(device_id)
@@ -146,6 +147,6 @@ if __name__ == "__main__":
     print(f"Hardware LOCKED via eFuse. State: {bb._core.efuse.get_state_hash()[:16]}")
 
     sig = np.full(100, 65, dtype=np.uint8)
-    t = np.sum(sig.astype(np.int64) * np.arange(1, 101)) % 251
+    t = np.sum(sig.astype(np.int64) * np.arange(1, 101)) % SovereignConfig.get_manifold_params()["modulus"]
     res = bb.process_signal(sig, t)
     print(f"Result: {res}")

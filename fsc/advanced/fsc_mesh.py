@@ -66,9 +66,19 @@ class TopologicalSharder:
             coords.append(int.from_bytes(chunk, "big") / 0xFFFFFFFF)
         return np.array(coords)
 
+    def find_nodes_for_data(self, data_id: str, k: int = 3) -> List[MeshNode]:
+        """
+        Simulates DHT-style peer discovery using manifold distance.
+        Returns the k nodes closest to the data manifold point.
+        """
+        target = self._hash_to_manifold(data_id)
+        # In a real DHT, this would involve iterative LOOKUP RPCs.
+        # Here we simulate the result by sorting local knowledge.
+        return sorted(self.nodes, key=lambda n: n.distance_to(target))[:k]
+
     def shard_resilient(self, data_id: str, payload: bytes, k_data: int = 3, m_parity: int = 2) -> Dict[str, bytes]:
         total_shards = k_data + m_parity
-        targets = sorted(self.nodes, key=lambda n: n.distance_to(self._hash_to_manifold(data_id)))[:total_shards]
+        targets = self.find_nodes_for_data(data_id, total_shards)
         chunk_size = (len(payload) + k_data - 1) // k_data
         padded_payload = payload.ljust(chunk_size * k_data, b"\0")
         data_shards = [np.frombuffer(padded_payload[i*chunk_size:(i+1)*chunk_size], dtype=np.uint8) for i in range(k_data)]
@@ -90,8 +100,8 @@ class TopologicalSharder:
         """
         Reconstructs the original payload from available shards using algebraic solver.
         """
-        # Mapping available shards back to their indices (0..k+m-1)
-        targets = sorted(self.nodes, key=lambda n: n.distance_to(self._hash_to_manifold(data_id)))[:5] # Assume k=3, m=2
+        # Discovery phase: find where the shards SHOULD be
+        targets = self.find_nodes_for_data(data_id, 5) # Assume k=3, m=2
         node_id_to_idx = {n.node_id: i for i, n in enumerate(targets)}
 
         available_indices = []
@@ -107,10 +117,6 @@ class TopologicalSharder:
         reconstructed = np.zeros((k_data, chunk_size), dtype=np.uint8)
 
         # Build System Matrix A
-        # For each available shard i at index idx:
-        # if idx < k: shard[i] = D_idx (Identity)
-        # else: shard[i] = sum( (j+1)^(idx-k) * D_j )
-
         A = np.zeros((k_data, k_data), dtype=np.int64)
         for row in range(k_data):
             idx = available_indices[row]
@@ -166,7 +172,7 @@ if __name__ == "__main__":
     payload = b"RESILIENT_RECOVERY"
     shards = sharder.shard_resilient(data_id, payload)
     # Lose 2 data shards
-    targets = sorted(nodes, key=lambda n: n.distance_to(sharder._hash_to_manifold(data_id)))
+    targets = sharder.find_nodes_for_data(data_id, 5)
     subset = {targets[i].node_id: shards[targets[i].node_id] for i in [0, 3, 4]}
     recovered = sharder.reconstruct_payload(data_id, subset, original_len=len(payload))
     print(f"Original: {payload}")

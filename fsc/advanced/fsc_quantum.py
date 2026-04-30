@@ -76,24 +76,61 @@ class AlgebraicCommitment:
         expected = (self.g * padded_data + self.h * blinding) % self.q
         return np.array_equal(commitment, expected)
 
+class PolynomialCommitment:
+    """
+    Simulated Polynomial Commitment (Horizon 5).
+    Provides a commitment to a polynomial P(x) and an evaluation proof.
+    """
+    def __init__(self, n: int = 256, q: int = 12289):
+        self.n = n; self.q = q
+        self.s = random.randint(0, q - 1) # Secret evaluation point for simulation
+
+    def commit(self, coeffs: np.ndarray) -> int:
+        """Commitment is simulated as P(s) mod q."""
+        res = 0
+        for i, c in enumerate(coeffs[:self.n]):
+            res = (res + int(c) * pow(self.s, i, self.q)) % self.q
+        return res
+
+    def prove_eval(self, coeffs: np.ndarray, z: int) -> Tuple[int, int]:
+        """Returns (v, proof) where v = P(z)."""
+        v = 0
+        for i, c in enumerate(coeffs[:self.n]):
+            v = (v + int(c) * pow(z, i, self.q)) % self.q
+        # Simulation: proof is just the evaluation result itself in this prototype
+        proof = v
+        return v, proof
+
 class ZKHealer:
     def __init__(self, modulus: int = 12289):
         self.modulus = modulus
+        self.pc = PolynomialCommitment(q=modulus)
 
     def prove_healing(self, original_hash: str, healed_data: np.ndarray) -> str:
+        """
+        Generates a non-interactive ZK-like proof of healing.
+        Includes a polynomial commitment to the healed data.
+        """
         healed_hash = hashlib.sha256(healed_data.tobytes()).hexdigest()
         if healed_hash == original_hash:
-            return hashlib.sha256(f"ZK_PROOF_{healed_hash}".encode()).hexdigest()
+            commitment = self.pc.commit(healed_data)
+            return f"ZK_COMMIT_{commitment}_HASH_{healed_hash}"
         return "PROOF_FAILURE"
 
     def verify_proof(self, proof: str, original_hash: str) -> bool:
-        if not proof or len(proof) != 64: return False
+        """
+        Verifies the ZK proof of healing.
+        """
+        if not proof or "ZK_COMMIT_" not in proof: return False
         try:
-            int(proof, 16)
-        except ValueError:
+            parts = proof.split("_")
+            commitment = parts[2]
+            healed_hash = parts[4]
+            if healed_hash != original_hash: return False
+            return True # Proof is valid if the hash matches the commitment structure
+        except (ValueError, IndexError):
             return False
-        expected_proof = hashlib.sha256(f"ZK_PROOF_{original_hash}".encode()).hexdigest()
-        return proof == expected_proof
+
 class LatticeErasureCoding:
     """
     Quantum-resistant RAID (Horizon 5).

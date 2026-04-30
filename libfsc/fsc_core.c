@@ -419,6 +419,18 @@ int fsc_heal_multi8(uint8_t* data, const int32_t* weights, size_t n_data, const 
         for (size_t j = c; j <= k; j++) { __int128_t t_v = M[c][j]; M[c][j] = M[piv][j]; M[piv][j] = t_v; }
         int64_t inv = fsc_mod_inverse((int64_t)M[c][c], p);
         for (size_t j = c; j <= k; j++) M[c][j] = (M[c][j] * inv) % p;
+void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t n, int64_t q) {
+    // Simulation of SIMD-optimized polynomial convolution for Horizon 5
+    for (size_t i = 0; i < n; i++) {
+        __int128_t acc = 0;
+        for (size_t j = 0; j < n; j++) {
+            size_t idx = (i >= j) ? (i - j) : (i - j + n);
+            acc += (__int128_t)a[j] * b[idx];
+        }
+        res[i] = (int64_t)(acc % q);
+    }
+}
+
         for (size_t row = 0; row < k; row++) {
             if (row != c && M[row][c] != 0) {
                 __int128_t f = M[row][c];

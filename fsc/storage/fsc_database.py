@@ -19,6 +19,7 @@ and a column-sum invariant. This is a 2D Structural FSC.
 
 import numpy as np
 from typing import List, Optional, Dict
+from fsc.enterprise.fsc_config import SovereignConfig
 
 class StructuralTable:
     """
@@ -26,10 +27,10 @@ class StructuralTable:
       Sum(row i) == R_i (Positional Row Invariant)
       Sum(col j) == C_j (Positional Col Invariant)
     """
-    def __init__(self, rows: int, cols: int, m: int = 251):
+    def __init__(self, rows: int, cols: int, m: Optional[int] = None):
         self.n_rows = rows
         self.n_cols = cols
-        self.m = m
+        self.m = m or SovereignConfig.get_manifold_params()["modulus"]
         # Table data including redundant row/col "edges"
         # We store an (R+1) x (C+1) grid.
         # The last row and last column are the structural balance fields.
