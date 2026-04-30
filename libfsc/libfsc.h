@@ -79,3 +79,4 @@ void fsc_audit_log(const char* event_type, int index, int64_t magnitude);
 #endif
 
 #endif
+void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t n, int64_t q);

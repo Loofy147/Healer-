@@ -1,23 +1,23 @@
 """
-FSC: Forward Sector Correction - Proactive Infrastructure (v7)
+FSC: Forward Sector Correction - Algebraic RAID (Model 5)
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 
 import numpy as np
-import struct
-from typing import List, Optional, Tuple, Dict
-from fsc.core.fsc_framework import solve_linear_system, gf_inv
-from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_heal_single8, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
+from typing import Dict, List, Optional
+from fsc.core.fsc_framework import gf_inv, solve_linear_system
+from fsc.enterprise.fsc_config import SovereignConfig
+from fsc.core.fsc_native import is_native_available, native_batch_verify_model5, native_heal_erasure8, native_volume_encode8, native_volume_write8, native_block_seal, native_block_verify, FSC_SUCCESS, FSC_ERR_INVALID, FSC_ERR_BOUNDS
 
 class FSCBlock:
     """
     Represents a physical storage sector with internal FSC protection.
     Uses 3-constraint Model 5 for robust intra-sector healing.
     """
-    def __init__(self, block_id: int, size: int = 512, m: int = 251, data: np.ndarray = None):
+    def __init__(self, block_id: int, size: int = 512, m: Optional[int] = None, data: np.ndarray = None):
         self.block_id = block_id
         self.size = size
-        self.m = m
+        self.m = m or SovereignConfig.get_manifold_params()["modulus"]
         self.data_len = size - 3
         self.data = data if data is not None else np.zeros(size, dtype=np.uint8)
 
@@ -30,11 +30,11 @@ class FSCBlock:
 
         # Bolt Optimization: Pre-calculate the modular inverse of the 3x3 constraint matrix
         n1, n2, n3 = size - 2, size - 1, size
-        A = np.array([[1, 1, 1], [n1, n2, n3], [pow(n1, 2, m), pow(n2, 2, m), pow(n3, 2, m)]], dtype=np.int64)
+        A = np.array([[1, 1, 1], [n1, n2, n3], [pow(n1, 2, self.m), pow(n2, 2, self.m), pow(n3, 2, self.m)]], dtype=np.int64)
         I = np.eye(3, dtype=np.int64)
         A_inv_rows = []
         for i in range(3):
-            row_sol = solve_linear_system(A.tolist(), I[i].tolist(), m)
+            row_sol = solve_linear_system(A.tolist(), I[i].tolist(), self.m)
             if row_sol is None: raise RuntimeError("Singular constraint matrix in FSCBlock")
             A_inv_rows.append(row_sol)
         self._A_inv = np.array(A_inv_rows, dtype=np.int64).T
@@ -103,10 +103,10 @@ class FSCVolume:
     """
     Algebraic RAID Volume with Proactive Scrubbing (v7).
     """
-    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: int = 251):
+    def __init__(self, n_blocks: int, block_size: int = 512, k_parity: int = 2, buffer: np.ndarray = None, modulus: Optional[int] = None):
         self.n_blocks, self.block_size, self.k_parity = n_blocks, block_size, k_parity
         self.n_data_blocks = n_blocks - k_parity
-        self.m = modulus
+        self.m = modulus or SovereignConfig.get_manifold_params()["modulus"]
 
         # Bolt Optimization: Support external buffers (e.g. mmap) for zero-copy
         if buffer is not None:

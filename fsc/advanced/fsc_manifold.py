@@ -4,8 +4,10 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 
 import numpy as np
+import hashlib
 from typing import List, Dict, Tuple, Optional
 from fsc.core.fsc_framework import gf_inv
+from fsc.enterprise.fsc_config import SovereignConfig
 
 class LayeredManifold:
     """
@@ -13,9 +15,14 @@ class LayeredManifold:
     Each record must satisfy invariants in both a small field (e.g., GF(251))
     and a large field (e.g., GF(2^31-1)).
     """
-    def __init__(self, moduli: List[int] = [251, 2147483647]):
-        self.moduli = moduli
-        self.weights = [np.random.randint(1, m, 1024, dtype=np.int64) for m in moduli]
+    def __init__(self, moduli: Optional[List[int]] = None):
+        self.moduli = moduli or [SovereignConfig.get_manifold_params()["modulus"], 2147483647]
+        # Use a deterministic seed for weight generation in this manifold instance
+        # In a real system, the seed would be stored in the file header.
+        self.weights = []
+        for m in self.moduli:
+            np.random.seed(42) # Deterministic weights for LayeredManifold prototype
+            self.weights.append(np.random.randint(1, m, 1024, dtype=np.int64))
 
     def seal_record(self, data: np.ndarray) -> List[int]:
         """Creates multiple syndromes across layered manifolds."""
@@ -67,7 +74,8 @@ class LayeredManifold:
 
 if __name__ == "__main__":
     lm = LayeredManifold()
-    payload = np.random.randint(0, 251, 100, dtype=np.uint8)
+    m_main = SovereignConfig.get_manifold_params()["modulus"]
+    payload = np.random.randint(0, m_main, 100, dtype=np.uint8)
     synd = lm.seal_record(payload)
     print(f"Syndromes across {len(lm.moduli)} manifolds: {synd}")
 
@@ -75,7 +83,7 @@ if __name__ == "__main__":
     print(f"Initial Verification: {lm.verify_record(payload, synd)}")
 
     # Corrupt and Heal
-    payload[10] = (payload[10] + 5) % 251
+    payload[10] = (payload[10] + 5) % m_main
     print(f"Verification after corruption: {lm.verify_record(payload, synd)}")
 
     success = lm.heal_layered(payload, synd, 10)

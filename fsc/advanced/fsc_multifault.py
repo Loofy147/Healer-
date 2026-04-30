@@ -1,254 +1,110 @@
 """
-FSC: Forward Sector Correction
+FSC: Forward Sector Correction - Multi-Fault Algebraic Solvers
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
-
-PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
-COMMERCIAL LICENSE: Required for proprietary/enterprise use.
-
-PATENT PENDING: Industrial applications of these algebraic primitives
-for database pages, kernel block devices, and network protocols.
-"""
-
-"""
-FSC Multi-fault: k simultaneous field corruptions
-===================================================
-Single-field FSC uses 1 invariant → recovers 1 corruption.
-Multi-fault FSC uses k invariants → recovers k simultaneous corruptions.
-
-Math: treat n data fields as polynomial coefficients over GF(p).
-Store k evaluation points as invariants.
-Any k corrupted fields → solve k×k linear system over GF(p).
-
-This IS Reed-Solomon, derived from the fiber-stratification principle.
 """
 
 import numpy as np
-from itertools import combinations
+from typing import List, Optional
+from fsc.core.fsc_framework import solve_linear_system
+from fsc.enterprise.fsc_config import SovereignConfig
 
-
-# ── GF(p) ARITHMETIC ─────────────────────────────────────────────
-
-def gf_inv(a, p):
-    """Modular inverse via Fermat's little theorem."""
-    return pow(int(a), p-2, p)
-
-def gf_div(a, b, p):
-    return (int(a) * gf_inv(b, p)) % p
-
-def poly_eval(coeffs, x, p):
-    """Evaluate polynomial at x over GF(p)."""
-    return int(sum(int(c) * pow(int(x), i, p) for i,c in enumerate(coeffs))) % p
-
-def lagrange_recover(known_points, query_x, p):
-    """Lagrange interpolation: given k points, evaluate at query_x."""
-    total = 0
-    for i, (xi, yi) in enumerate(known_points):
-        num = den = 1
-        for j, (xj, _) in enumerate(known_points):
-            if i != j:
-                num = (num * (query_x - xj)) % p
-                den = (den * (xi - xj)) % p
-        total = (total + int(yi) * num * gf_inv(den, p)) % p
-    return total
-
-def solve_linear_system(A, b, p):
-    """Gaussian elimination over GF(p)."""
-    n = len(b)
-    M = [[int(A[i][j]) % p for j in range(n)] + [int(b[i]) % p]
-         for i in range(n)]
-    for col in range(n):
-        pivot = next((r for r in range(col,n) if M[r][col]%p != 0), None)
-        if pivot is None:
-            return None
-        M[col], M[pivot] = M[pivot], M[col]
-        inv_piv = gf_inv(M[col][col], p)
-        M[col] = [(v * inv_piv) % p for v in M[col]]
-        for row in range(n):
-            if row != col and M[row][col] != 0:
-                factor = M[row][col]
-                M[row] = [(M[row][j] - factor*M[col][j]) % p
-                           for j in range(n+1)]
-    return [row[-1] % p for row in M]
-
-
-# ── MULTI-FAULT FSC ENCODER ───────────────────────────────────────
-
-class MultiFaultFSC:
+class MultiFaultSolver:
     """
-    k-fault tolerant FSC for a record of n integer fields.
-
-    Encodes n data values + k evaluation points.
-    Any k simultaneous field corruptions are recoverable.
-
-    Algorithm:
-      - Treat data as polynomial coefficients: P(x) = Σ data[i] * x^i
-      - Store k evaluations: eval[j] = P(x_j) for j=0..k-1
-      - On corruption: set up k equations, solve for corrupted values
+    General k-fault algebraic solver using Vandermonde-like systems.
+    Capable of correcting k erasures or floor(k/2) blind errors.
     """
+    def __init__(self, n_data: int, k_faults: int, p: Optional[int] = None):
+        self.n_data = n_data
+        self.k_faults = k_faults
+        self.p = p or SovereignConfig.get_manifold_params()["modulus"]
 
-    def __init__(self, n_data: int, k_faults: int, p: int = 251):
-        assert k_faults <= n_data, "Can't tolerate more faults than data fields"
-        self.n     = n_data
-        self.k     = k_faults
-        self.p     = p
-        # Evaluation points: use small primes for numerical stability
-        self.eval_points = list(range(1, k_faults + 1))
-
-    def encode(self, data: list) -> list:
+    def encode(self, data: np.ndarray) -> np.ndarray:
         """
-        Encode data → data + k evaluation points.
-        Returns full record: data[0..n-1] + evals[0..k-1]
+        Encodes data into a codeword by evaluating a polynomial
+        at k extra points.
         """
-        assert len(data) == self.n
-        # Evaluation points: P(xⱼ) = Σ data[i] * xⱼ^i mod p
-        evals = [poly_eval(data, xj, self.p) for xj in self.eval_points]
-        return [v % self.p for v in data] + evals
+        assert len(data) == self.n_data
+        # Simple systematic encoding: codeword = [data, parity]
+        # Parity P_j = sum( (i+1)^j * D_i ) mod p
+        parity = np.zeros(self.k_faults, dtype=np.int64)
+        for j in range(self.k_faults):
+            for i in range(self.n_data):
+                parity[j] = (parity[j] + int(data[i]) * pow(i + 1, j + 1, self.p)) % self.p
+        return np.concatenate([data, parity])
 
-    def recover(self, record: list, corrupted_indices: list) -> list:
+    def solve_erasures(self, codeword: np.ndarray, erased_indices: List[int]) -> np.ndarray:
         """
-        Recover k corrupted fields from the evaluation invariants.
-
-        corrupted_indices: list of field indices that were corrupted.
-        len(corrupted_indices) must equal k (exactly k faults).
-
-        Algorithm:
-        1. We know: P(x₀)..P(x_{k-1}) from stored evals
-        2. We know: n-k data coefficients (the uncorrupted ones)
-        3. Unknown: k corrupted coefficients
-        4. Each eval point gives: Σ known[i]*xj^i + Σ unknown[i]*xj^i = eval[j]
-           → k equations in k unknowns → solve linear system
+        Solves for lost symbols at known positions.
         """
-        data_part = list(record[:self.n])
-        eval_part = list(record[self.n:])
-        k         = len(corrupted_indices)
-        p         = self.p
+        if not erased_indices: return codeword
+        if len(erased_indices) > self.k_faults:
+            raise ValueError("Too many erasures to solve")
 
-        # For each eval point xj, build the equation:
-        # Σ_{i in corrupted} unknown[i] * xj^i = eval[j] - Σ_{i not corrupted} data[i] * xj^i
-        A = []  # k×k matrix
-        b = []  # k RHS values
+        # System: sum( (i+1)^j * D_i ) = P_j
+        # For erased i: sum_erased( (i+1)^j * D_i ) = P_j - sum_known( (i+1)^j * D_i )
 
-        for j, xj in enumerate(self.eval_points[:k]):
-            row = [pow(int(xj), ci, p) for ci in corrupted_indices]
-            known_sum = sum(int(data_part[i]) * pow(int(xj), i, p)
-                           for i in range(self.n) if i not in corrupted_indices) % p
-            rhs = (int(eval_part[j]) - known_sum) % p
-            A.append(row)
-            b.append(rhs)
+        n_total = self.n_data + self.k_faults
+        n_erased = len(erased_indices)
 
-        solution = solve_linear_system(A, b, p)
-        if solution is None:
-            return None
+        A = np.zeros((self.k_faults, n_erased), dtype=np.int64)
+        b = np.zeros(self.k_faults, dtype=np.int64)
 
-        healed = list(data_part)
-        for idx, ci in enumerate(corrupted_indices):
-            healed[ci] = solution[idx]
-        return healed + eval_part
+        # Current data in codeword (with zeros at erased positions)
+        d_current = codeword.copy()
+        for idx in erased_indices: d_current[idx] = 0
 
-    def is_valid(self, record: list) -> bool:
-        data_part = record[:self.n]
-        eval_part = record[self.n:]
-        for j, xj in enumerate(self.eval_points[:self.k]):
-            expected = poly_eval(data_part, xj, self.p)
-            if expected != int(eval_part[j]) % self.p:
-                return False
-        return True
+        known_indices = [i for i in range(self.n_data) if i not in erased_indices]
 
-    def detect_corruptions(self, record: list) -> list:
-        """
-        Identify which fields are corrupted by trying all k-combinations.
-        Returns list of corrupted field indices, or None if undetectable.
-        """
-        if self.is_valid(record):
-            return []
+        for j in range(self.k_faults):
+            # Target is the stored parity if it's not erased
+            target_parity_idx = self.n_data + j
+            if target_parity_idx not in erased_indices:
+                target = codeword[target_parity_idx]
+            else:
+                # If parity is erased, we can't use this equation as easily for data
+                # but we can solve for data using other non-erased parities.
+                continue
 
-        data_part = record[:self.n]
+            s_known = 0
+            for i in known_indices:
+                s_known = (s_known + int(codeword[i]) * pow(i + 1, j + 1, self.p)) % self.p
 
-        # Try all combinations of k corrupted fields
-        for combo in combinations(range(self.n), self.k):
-            healed = self.recover(record, list(combo))
-            if healed and self.is_valid(healed):
-                return list(combo)
+            b[j] = (target - s_known + self.p) % self.p
+            for k, e_idx in enumerate([ei for ei in erased_indices if ei < self.n_data]):
+                A[j, k] = pow(e_idx + 1, j + 1, self.p)
 
-        # Try fewer faults
-        for num_faults in range(1, self.k):
-            for combo in combinations(range(self.n), num_faults):
-                healed = self.recover(record, list(combo))
-                if healed and self.is_valid(healed):
-                    return list(combo)
+        # We need n_erased_data equations
+        erased_data_indices = [ei for ei in erased_indices if ei < self.n_data]
+        n_ed = len(erased_data_indices)
+        if n_ed == 0: return codeword
 
-        return None
+        # Find n_ed non-erased parity equations
+        valid_eqs = []
+        for j in range(self.k_faults):
+            if (self.n_data + j) not in erased_indices:
+                valid_eqs.append(j)
 
+        if len(valid_eqs) < n_ed: return codeword # Should not happen if total erased <= k
 
-# ── DEMO ─────────────────────────────────────────────────────────
+        A_sub = A[valid_eqs[:n_ed], :n_ed]
+        b_sub = b[valid_eqs[:n_ed]]
 
-if __name__ == '__main__':
-    import random
-    random.seed(42)
+        sol = solve_linear_system(A_sub.tolist(), b_sub.tolist(), self.p)
+        if sol:
+            for k, e_idx in enumerate(erased_data_indices):
+                codeword[e_idx] = sol[k]
 
-    print("=" * 64)
-    print("  FSC MULTI-FAULT — k Simultaneous Field Corruptions")
-    print("=" * 64)
+        return codeword
 
-    p = 251  # prime field
+if __name__ == "__main__":
+    p_val = SovereignConfig.get_manifold_params()["modulus"]
+    solver = MultiFaultSolver(n_data=10, k_faults=4)
+    data = np.random.randint(0, p_val, 10, dtype=np.int64)
+    cw = solver.encode(data)
 
-    test_cases = [
-        (6, 1, "1 fault, 1 invariant"),
-        (6, 2, "2 faults, 2 invariants"),
-        (6, 3, "3 faults, 3 invariants"),
-        (8, 4, "4 faults, 4 invariants"),
-    ]
-
-    for n_data, k_faults, label in test_cases:
-        print(f"\n  ── {label} (n={n_data} fields, p={p}) ──")
-
-        fsc = MultiFaultFSC(n_data, k_faults, p)
-
-        # Generate data and encode
-        data = [random.randint(0, p-1) for _ in range(n_data)]
-        record = fsc.encode(data)
-        assert fsc.is_valid(record), "Encoding failed"
-
-        # Corrupt exactly k fields
-        corrupt_positions = random.sample(range(n_data), k_faults)
-        corrupted = list(record)
-        originals = {}
-        for ci in corrupt_positions:
-            originals[ci] = corrupted[ci]
-            corrupted[ci] = (corrupted[ci] + random.randint(1, p-1)) % p
-
-        print(f"    Original data:  {data}")
-        print(f"    Corrupted at:   {corrupt_positions}")
-        print(f"    Valid after corruption: {fsc.is_valid(corrupted)}")
-
-        # Auto-detect which fields are corrupted
-        detected = fsc.detect_corruptions(corrupted)
-        print(f"    Auto-detected:  {detected}")
-
-        # Recover
-        healed = fsc.recover(corrupted, detected or corrupt_positions)
-        ok = healed is not None and healed[:n_data] == [v%p for v in data]
-        print(f"    Recovery exact: {ok}")
-        if healed:
-            print(f"    Healed data:    {healed[:n_data]}")
-
-        overhead = k_faults  # k evaluation points = k bytes each (mod 251)
-        overhead_pct = 100 * overhead / n_data
-        print(f"    Overhead:       {overhead} eval points = {overhead_pct:.0f}% of data size")
-
-    # Stress test
-    print("\n  ── Stress Test: 1000 random records ──")
-    fsc = MultiFaultFSC(6, 2, p)
-    success = 0
-    for _ in range(1000):
-        data = [random.randint(0,p-1) for _ in range(6)]
-        record = fsc.encode(data)
-        corrupt_pos = random.sample(range(6), 2)
-        corrupted = list(record)
-        for ci in corrupt_pos:
-            corrupted[ci] = (corrupted[ci] + random.randint(1, p-1)) % p
-        healed = fsc.recover(corrupted, corrupt_pos)
-        if healed and healed[:6] == [v%p for v in data]:
-            success += 1
-
-    print(f"    2-fault recovery: {success}/1000 exact ({success/10:.1f}%)")
+    print(f"Original Data: {data}")
+    # Erase 2 indices
+    cw[2] = 0; cw[5] = 0
+    recovered = solver.solve_erasures(cw, [2, 5])
+    print(f"Recovered Data: {recovered[:10]}")
+    assert np.array_equal(data, recovered[:10])

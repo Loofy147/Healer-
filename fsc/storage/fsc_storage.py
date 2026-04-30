@@ -20,14 +20,15 @@ This allows unique identification AND recovery of any single corrupted field.
 from typing import List, Optional, Dict
 from fsc.core.fsc_structural import AlgebraicFormat
 from fsc.core.fsc_native import FSC_SUCCESS, FSC_ERR_INVALID
+from fsc.enterprise.fsc_config import SovereignConfig
 
 class StructuralLog:
     """
     A log where every record is algebraically dependent on its position.
     Uses an overdetermined set of positional constraints.
     """
-    def __init__(self, m: int = 251, fields_per_record: int = 4):
-        self.m = m
+    def __init__(self, m: Optional[int] = None, fields_per_record: int = 4):
+        self.m = m or SovereignConfig.get_manifold_params()["modulus"]
         self.fields_per_record = fields_per_record
         self.records: List[List[int]] = []
 

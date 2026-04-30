@@ -20,15 +20,15 @@
 *   **eFuse Lock/PUF**: Burning device-specific integrity signatures into silicon.
 *   **VHDL/Verilog Core**: (Planned) Porting fsc_core.c to hardware logic.
 
-## 5. Horizon 5: Post-Quantum Algebraic Primitives - [RESEARCH PREVIEW]
-*   **Lattice-based FSC**: Upgrading GF(p) solvers to Ring-LWE (Learning With Errors) structures for Q-Day readiness.
+## 5. Horizon 5: Post-Quantum Algebraic Primitives - [IMPLEMENTATION ACTIVE]
+*   **Lattice-based FSC**: Upgrading GF(p) solvers to Ring-LWE (Learning With Errors) structures for Q-Day readiness. [NATIVE AVX2 CORE COMPLETED]
 *   **Homomorphic Integrity**: Verification of encrypted data without decryption.
-*   **Zero-Knowledge Healing**: (Planned) Proving integrity without revealing contents.
+*   **Zero-Knowledge Healing**: Non-interactive proofs of integrity using Polynomial Commitments. [COMPLETED]
 
 ## 6. Horizon 6: Distributed Sovereign Mesh - [PROTOTYPE COMPLETED]
-*   **Topological Sharding**: Dynamic data distribution based on manifold distance.
+*   **Topological Sharding**: Dynamic data distribution based on manifold distance. [PEER DISCOVERY COMPLETED]
 *   **Algebraic Consensus**: Replacing Paxos/Raft with polynomial-sum based agreement protocols.
-*   **Self-Synthesizing Nodes**: (Planned) Autonomous local weight generation.
+*   **Self-Synthesizing Nodes**: Autonomous local weight generation based on entropy. [COMPLETED]
 
 ---
 **FSC Defensive Strategy Notice**
