@@ -55,6 +55,9 @@ try:
     _lib.fsc_block_verify.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64]
     _lib.fsc_block_verify.restype = ctypes.c_int
 
+    _lib.fsc_poly_mul_avx2.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+    _lib.fsc_poly_mul_avx2.restype = None
+
 except Exception as e:
     print(f"Warning: libfsc not loaded: {e}")
 
@@ -120,3 +123,10 @@ def native_block_seal(block: np.ndarray, block_id: int, modulus: int) -> bool:
 def native_block_verify(block: np.ndarray, block_id: int, modulus: int) -> bool:
     if not _lib: raise RuntimeError("Native library not loaded")
     return _lib.fsc_block_verify(block.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), len(block), block_id, modulus) != 0
+
+def native_poly_mul(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a)
+    res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_mul_avx2(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
+    return res
