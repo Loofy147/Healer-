@@ -58,6 +58,14 @@ try:
     _lib.fsc_poly_mul_avx2.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
     _lib.fsc_poly_mul_avx2.restype = None
 
+    if hasattr(_lib, 'fsc_mesh_evaluate'):
+        _lib.fsc_mesh_evaluate.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_mesh_evaluate.restype = None
+
+    if hasattr(_lib, 'fsc_solve_modular'):
+        _lib.fsc_solve_modular.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64, ctypes.c_size_t]
+        _lib.fsc_solve_modular.restype = ctypes.c_int
+
 except Exception as e:
     print(f"Warning: libfsc not loaded: {e}")
 
@@ -109,7 +117,7 @@ def native_volume_encode8(volume_data: np.ndarray, n_blocks: int, block_size: in
 
 def native_volume_write8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, modulus: int, user_data: bytes) -> bool:
     if not _lib: raise RuntimeError("Native library not loaded")
-    ud_array = (ctypes.c_uint8 * len(user_data)).from_buffer_copy(user_data)
+    ud_array = (ctypes.uint8 * len(user_data)).from_buffer_copy(user_data)
     return _lib.fsc_volume_write8(volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_blocks, block_size, k_parity, modulus, ud_array, len(user_data)) == FSC_SUCCESS
 
 def native_silicon_verify_gate(data: np.ndarray, rom_weights: np.ndarray, target: int, modulus: int) -> bool:
@@ -130,3 +138,16 @@ def native_poly_mul(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
     res = np.zeros(n, dtype=np.int64)
     _lib.fsc_poly_mul_avx2(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
     return res
+
+def native_mesh_evaluate(payload: bytes, k_data: int, modulus: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    res = np.zeros(k_data, dtype=np.int64)
+    p_array = (ctypes.c_uint8 * len(payload)).from_buffer_copy(payload)
+    _lib.fsc_mesh_evaluate(p_array, len(payload), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), k_data, modulus)
+    return res
+
+def native_solve_modular(A: np.ndarray, B: np.ndarray, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = A.shape[0]
+    rhs_cols = B.shape[1] if B.ndim > 1 else 1
+    return _lib.fsc_solve_modular(A.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), B.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, modulus, rhs_cols) == FSC_SUCCESS

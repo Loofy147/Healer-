@@ -1,5 +1,5 @@
 /*
-FSC: Forward Sector Correction - Native Core (v7.32)
+FSC: Forward Sector Correction - Native Core (v7.45)
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 */
 
@@ -15,6 +15,31 @@ Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 #define FSC_ERR_BOUNDS -1
 #define FSC_ERR_SINGULAR 0
 #define FSC_MAX_K 16
+
+typedef struct {
+    int64_t m;
+    __int128_t mu;
+} fsc_barrett_t;
+
+fsc_barrett_t fsc_barrett_init(int64_t m) {
+    fsc_barrett_t b;
+    b.m = m;
+    if (m > 1) {
+        b.mu = (((__int128_t)1) << 64) / m;
+    } else {
+        b.mu = 0;
+    }
+    return b;
+}
+
+static inline int64_t fsc_barrett_reduce(__int128_t a, fsc_barrett_t b) {
+    if (b.m <= 1) return 0;
+    int64_t q = (int64_t)((a * b.mu) >> 64);
+    int64_t r = (int64_t)(a - (__int128_t)q * b.m);
+    while (r >= b.m) r -= b.m;
+    while (r < 0) r += b.m;
+    return r;
+}
 
 int64_t fsc_mod_pow(int64_t base, int64_t exp, int64_t m) {
     int64_t res = 1; base %= m;
@@ -45,10 +70,12 @@ int64_t fsc_mod_inverse(int64_t a, int64_t m) {
 void fsc_syndromes_4way(const uint8_t* data, size_t n, __int128_t* s, int64_t modulus) {
     s[0] = s[1] = s[2] = s[3] = 0;
     if (modulus <= 1) return;
+    fsc_barrett_t b = fsc_barrett_init(modulus);
     size_t i = 0;
     __m256i v_s0 = _mm256_setzero_si256();
     __m256i v_s1 = _mm256_setzero_si256();
     __m256i v_s2 = _mm256_setzero_si256();
+    __m256i v_s3 = _mm256_setzero_si256();
     __m256i v_zero = _mm256_setzero_si256();
     for (; i + 31 < n; i += 32) {
         __m256i v_data = _mm256_loadu_si256((const __m256i*)(data + i));
@@ -61,28 +88,37 @@ void fsc_syndromes_4way(const uint8_t* data, size_t n, __int128_t* s, int64_t mo
             __m256i v_p1 = _mm256_mullo_epi32(v_d32, v_w);
             v_s1 = _mm256_add_epi64(v_s1, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p1, 0)));
             v_s1 = _mm256_add_epi64(v_s1, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p1, 1)));
+
             __m256i v_w2 = _mm256_mullo_epi32(v_w, v_w);
             __m256i v_p2 = _mm256_mullo_epi32(v_d32, v_w2);
             v_s2 = _mm256_add_epi64(v_s2, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p2, 0)));
             v_s2 = _mm256_add_epi64(v_s2, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p2, 1)));
+
+            __m256i v_w3 = _mm256_mullo_epi32(v_w2, v_w);
+            __m256i v_p3 = _mm256_mullo_epi32(v_d32, v_w3);
+            v_s3 = _mm256_add_epi64(v_s3, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p3, 0)));
+            v_s3 = _mm256_add_epi64(v_s3, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(v_p3, 1)));
         }
-        if ((i & 0xFFF) == 0xFE0) {
+        if ((i & 0x3FF) == 0x3E0) {
             uint64_t a_tmp[4];
             _mm256_storeu_si256((__m256i*)a_tmp, v_s1); s[1] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
             _mm256_storeu_si256((__m256i*)a_tmp, v_s2); s[2] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
-            v_s1 = _mm256_setzero_si256(); v_s2 = _mm256_setzero_si256();
-            s[1] %= modulus; s[2] %= modulus;
+            _mm256_storeu_si256((__m256i*)a_tmp, v_s3); s[3] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
+            v_s1 = _mm256_setzero_si256(); v_s2 = _mm256_setzero_si256(); v_s3 = _mm256_setzero_si256();
+            s[1] = fsc_barrett_reduce(s[1], b); s[2] = fsc_barrett_reduce(s[2], b); s[3] = fsc_barrett_reduce(s[3], b);
         }
     }
     uint64_t a_tmp[4];
     _mm256_storeu_si256((__m256i*)a_tmp, v_s0); s[0] = (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
     _mm256_storeu_si256((__m256i*)a_tmp, v_s1); s[1] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
     _mm256_storeu_si256((__m256i*)a_tmp, v_s2); s[2] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
+    _mm256_storeu_si256((__m256i*)a_tmp, v_s3); s[3] += (__int128_t)a_tmp[0]+a_tmp[1]+a_tmp[2]+a_tmp[3];
     for (; i < n; i++) {
         uint64_t val = data[i]; uint64_t w = i + 1;
-        s[0] += val; s[1] += (__int128_t)val * w; s[2] += (__int128_t)val * w * w;
+        s[0] += val; s[1] += (__int128_t)val * w; s[2] += (__int128_t)val * w * w; s[3] += (__int128_t)val * w * w * w;
     }
-    s[0] %= modulus; s[1] %= modulus; s[2] %= modulus;
+    s[0] = fsc_barrett_reduce(s[0], b); s[1] = fsc_barrett_reduce(s[1], b);
+    s[2] = fsc_barrett_reduce(s[2], b); s[3] = fsc_barrett_reduce(s[3], b);
 }
 
 int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus) {
@@ -173,16 +209,32 @@ size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t bloc
 
 int fsc_volume_encode8(uint8_t* buffer, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus) {
     size_t n_data = n_blocks - k_parity; size_t d_len = block_size - 3;
+    fsc_barrett_t b = fsc_barrett_init(modulus);
+
+    // Precompute weight cache
+    int64_t* weight_cache = (int64_t*)malloc(k_parity * n_data * sizeof(int64_t));
+    for (size_t j = 0; j < k_parity; j++) {
+        for (size_t i = 0; i < n_data; i++) {
+            weight_cache[j * n_data + i] = fsc_mod_pow(i + 1, j, modulus);
+        }
+    }
+
     for (size_t j = 0; j < k_parity; j++) memset(buffer + (n_data + j) * block_size, 0, d_len);
+
     #pragma omp parallel for
     for (size_t p = 0; p < d_len; p++) {
         __int128_t acc[FSC_MAX_K]; for (size_t j = 0; j < k_parity; j++) acc[j] = 0;
         for (size_t i = 0; i < n_data; i++) {
             uint8_t v = buffer[i * block_size + p]; if (v == 0) continue;
-            for (size_t j = 0; j < k_parity; j++) acc[j] += (__int128_t)v * fsc_mod_pow(i + 1, j, modulus);
+            for (size_t j = 0; j < k_parity; j++) {
+                acc[j] += (__int128_t)v * weight_cache[j * n_data + i];
+            }
         }
-        for (size_t j = 0; j < k_parity; j++) buffer[(n_data + j) * block_size + p] = (uint8_t)(acc[j] % modulus);
+        for (size_t j = 0; j < k_parity; j++) {
+            buffer[(n_data + j) * block_size + p] = (uint8_t)fsc_barrett_reduce(acc[j], b);
+        }
     }
+    free(weight_cache);
     for (size_t j = 0; j < k_parity; j++) fsc_block_seal(buffer + (n_data + j) * block_size, block_size, (int64_t)(n_data + j), modulus);
     return FSC_SUCCESS;
 }
@@ -302,6 +354,29 @@ void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t 
         int64_t r = (int64_t)(acc % q); res[i] = (r < 0) ? r + q : r;
     }
 }
+
+void fsc_mesh_evaluate(const uint8_t* payload, size_t len, int64_t* result, size_t k_data, int64_t modulus) {
+    if (modulus <= 1) return;
+    size_t chunk_size = (len + k_data - 1) / k_data;
+    fsc_barrett_t b = fsc_barrett_init(modulus);
+
+    #pragma omp parallel for
+    for (size_t j = 0; j < k_data; j++) {
+        __int128_t acc = 0;
+        for (size_t i = 0; i < k_data; i++) {
+            size_t start = i * chunk_size;
+            if (start >= len) continue;
+            size_t end = (start + chunk_size > len) ? len : start + chunk_size;
+            __int128_t local_sum = 0;
+            for (size_t p = start; p < end; p++) {
+                local_sum += payload[p];
+            }
+            acc += local_sum * fsc_mod_pow(i + 1, j, modulus);
+        }
+        result[j] = fsc_barrett_reduce(acc, b);
+    }
+}
+
 void fsc_audit_log(const char* e, int i, int64_t m) {}
 int fsc_silicon_verify_gate(const uint8_t* d, const uint8_t* w, size_t n, int64_t t, int64_t m) {
     if (m <= 1) return 1; __int128_t s = 0;
