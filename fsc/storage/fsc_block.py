@@ -142,6 +142,8 @@ class FSCVolume:
                         self.data_buffer[b_start + len(chunk) : b_start + chunk_size] = 0
                 else:
                     self.data_buffer[b_start : b_start + chunk_size] = 0
+            for i in range(self.n_data_blocks):
+                native_block_seal(self.data_buffer[i*self.block_size : (i+1)*self.block_size], i, self.m)
             native_volume_encode8(self.data_buffer, self.n_blocks, self.block_size, self.k_parity, self.m)
             return
 

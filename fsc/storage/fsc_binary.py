@@ -204,11 +204,22 @@ class FSCReader:
         failed = np.array(failed, dtype=np.int32)
 
         if er_indices:
+            if is_native_available() and len(er_indices) <= len(failed):
+                p_main = int(self._moduli[failed[0]])
+                if all(int(self._moduli[f_idx]) == p_main for f_idx in failed):
+                    weights_subset = self._weight_matrix[failed].flatten().astype(np.int32)
+                    targets_subset = np.array([self.constraints[f_idx].target if self.constraints[f_idx].target is not None else self.records[r_idx, self.constraints[f_idx].stored_field_idx] for f_idx in failed], dtype=np.int64)
+                    moduli_subset = np.array([p_main] * len(failed), dtype=np.int64)
+                    test_data = data_np.copy()
+                    if native_heal_multi64(test_data, weights_subset, targets_subset, moduli_subset, er_indices):
+                        if self._verify_record(r_idx, test_data):
+                            self.records[r_idx, :len(self.data_fields)] = test_data
+                            return FSC_SUCCESS
             for t in range(1, len(failed) + 1):
                 if t > len(er_indices): break
                 for c_subset in combinations(failed, t):
                     if len(c_subset) < len(er_indices): continue
-                    p = self._moduli[c_subset[0]]
+                    p = int(self._moduli[c_subset[0]])
                     A = self._weight_matrix[list(c_subset)][:, list(er_indices)]
                     if p > 0:
                         sol = solve_linear_system(A % p, [syndromes[i] % p for i in c_subset], p)

@@ -7,6 +7,7 @@ import numpy as np
 import hashlib
 import random
 from typing import Tuple, List, Optional
+from fsc.core.fsc_native import is_native_available, native_poly_mul
 
 class LatticeIntegrity:
     def __init__(self, n: int = 256, q: int = 12289):
@@ -15,6 +16,8 @@ class LatticeIntegrity:
         self._s = np.random.randint(0, q, n)
 
     def _poly_mul(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        if is_native_available():
+            return native_poly_mul(a.astype(np.int64), b.astype(np.int64), self.q)
         full_conv = np.convolve(a, b)
         res = np.zeros(self.n, dtype=np.int64)
         for i, val in enumerate(full_conv):
