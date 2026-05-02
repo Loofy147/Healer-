@@ -201,3 +201,35 @@ if __name__ == "__main__":
     recovered = sharder.reconstruct_payload(data_id, subset, original_len=len(payload))
     print(f"Original: {payload}")
     print(f"Recovered: {recovered}")
+
+class TopologicalRouter:
+    """
+    Determines optimal message paths in the sovereign mesh based on
+    manifold distance gradients.
+    """
+    def __init__(self, sharder: TopologicalSharder):
+        self.sharder = sharder
+
+    def find_route(self, source_node: MeshNode, target_coords: np.ndarray) -> List[str]:
+        """
+        Simulates greedy distance-gradient routing.
+        """
+        route = [source_node.node_id]
+        current = source_node
+        visited = {source_node.node_id}
+
+        for _ in range(10): # Max hops
+            neighbors = [n for n in self.sharder.nodes if n.node_id not in visited]
+            if not neighbors: break
+
+            # Find neighbor that minimizes distance to target
+            next_hop = min(neighbors, key=lambda n: n.distance_to(target_coords))
+            if next_hop.distance_to(target_coords) >= current.distance_to(target_coords):
+                break # Local minimum reached
+
+            route.append(next_hop.node_id)
+            visited.add(next_hop.node_id)
+            current = next_hop
+            if current.distance_to(target_coords) < 0.05: break # Arrived
+
+        return route
