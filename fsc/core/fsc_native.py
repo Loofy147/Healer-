@@ -219,3 +219,7 @@ def native_poly_inv_ntt(a: np.ndarray) -> np.ndarray:
         _lib.fsc_poly_inv_ntt.restype = None
         _lib.fsc_poly_inv_ntt(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n)
     return res
+
+def native_heal_blind8(data: np.ndarray, targets: np.ndarray, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_heal_blind8(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), len(data), len(targets), modulus) == FSC_SUCCESS

@@ -56,8 +56,10 @@ int fsc_block_verify(const uint8_t* block, size_t block_size, int64_t block_id, 
 int fsc_heal_erasure8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
                      size_t k_parity, size_t n_lost, const size_t* bad_indices,
                      int64_t modulus);
+int fsc_heal_blind8(uint8_t* data, const int64_t* targets, size_t n, size_t k, int64_t modulus);
 
 int64_t fsc_mod_inverse(int64_t a, int64_t m);
+void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t n, int64_t q);
 
 typedef struct {
     uint8_t* buffer;
@@ -79,4 +81,3 @@ void fsc_audit_log(const char* event_type, int index, int64_t magnitude);
 #endif
 
 #endif
-void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t n, int64_t q);

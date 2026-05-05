@@ -1,3 +1,4 @@
+--- libfsc/fsc_core.c ---
 /*
 FSC: Forward Sector Correction - Native Core (v8.80)
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
@@ -403,3 +404,390 @@ int fsc_heal_blind8(uint8_t* data, const int64_t* targets, size_t n, size_t k, i
     free(s); free(lambda); free(b); free(error_pos); free(AM); free(BM);
     return res;
 }
+
+--- libfsc/libfsc.h ---
+/**
+ * FSC: Forward Sector Correction
+ * Copyright (C) 2024 FSC Core Team. All Rights Reserved.
+ *
+ * PUBLIC LICENSE: GNU Affero General Public License (AGPLv3)
+ * COMMERCIAL LICENSE: Required for proprietary/enterprise use.
+ *
+ * PATENT PENDING: Industrial applications of these algebraic primitives
+ * for database pages, kernel block devices, and network protocols.
+ */
+
+#ifndef LIBFSC_H
+#define LIBFSC_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifndef FSC_COMMERCIAL_BUILD
+#define FSC_COMMERCIAL_BUILD 0
+#endif
+
+#define FSC_MAX_K 16
+
+/* Error Codes */
+#define FSC_SUCCESS      1
+#define FSC_ERR_SINGULAR 0
+#define FSC_ERR_BOUNDS  -1
+#define FSC_ERR_INVALID -2
+
+int64_t fsc_calculate_sum8(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus);
+uint8_t fsc_heal_single8(const uint8_t* data, const int32_t* weights, size_t n,
+                        int64_t target, int64_t modulus, size_t corrupted_idx);
+int64_t fsc_calculate_sum64(const int64_t* data, const int32_t* weights, size_t n, int64_t modulus);
+int64_t fsc_heal_single64(const int64_t* data, const int32_t* weights, size_t n,
+                         int64_t target, int64_t modulus, size_t corrupted_idx);
+int fsc_heal_multi64(int64_t* data, const int32_t* weights, size_t n_data,
+                    const int64_t* targets, const int64_t* moduli,
+                    size_t k_faults, const size_t* corrupted_indices);
+int fsc_heal_multi8(uint8_t* data, const int32_t* weights, size_t n_data,
+                   const int64_t* targets, const int64_t* moduli,
+                   size_t k_faults, const size_t* corrupted_indices);
+
+size_t fsc_batch_verify_model5(const uint8_t* data, size_t n_blocks, size_t block_size, int64_t modulus, size_t* corrupted_indices);
+int64_t fsc_calculate_sum8_avx2(const uint8_t* data, const int32_t* weights, size_t n, int64_t modulus);
+int fsc_volume_write8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus, const uint8_t* user_data, size_t user_data_len);
+int fsc_silicon_verify_gate(const uint8_t* data, const uint8_t* rom_weights, size_t n, int64_t target, int64_t modulus);
+int fsc_volume_encode8(uint8_t* volume_data, size_t n_blocks, size_t block_size, size_t k_parity, int64_t modulus);
+
+int fsc_block_seal(uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus);
+int fsc_block_verify(const uint8_t* block, size_t block_size, int64_t block_id, int64_t modulus);
+
+int fsc_heal_erasure8(uint8_t* volume_data, size_t n_blocks, size_t block_size,
+                     size_t k_parity, size_t n_lost, const size_t* bad_indices,
+                     int64_t modulus);
+int fsc_heal_blind8(uint8_t* data, const int64_t* targets, size_t n, size_t k, int64_t modulus);
+
+int64_t fsc_mod_inverse(int64_t a, int64_t m);
+
+typedef struct {
+    uint8_t* buffer;
+    size_t len;
+    int64_t modulus;
+    int64_t target;
+    const int32_t* weights;
+    const int32_t* weights2;
+    int64_t target2;
+} FSCBuffer;
+
+void fsc_buffer_seal(FSCBuffer* b);
+int fsc_buffer_verify(FSCBuffer* b);
+int fsc_buffer_heal(FSCBuffer* b);
+void fsc_audit_log(const char* event_type, int index, int64_t magnitude);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+void fsc_poly_mul_avx2(const int64_t* a, const int64_t* b, int64_t* res, size_t n, int64_t q);
+
+--- fsc/core/fsc_native.py ---
+import ctypes
+import os
+import numpy as np
+from typing import List, Optional, Tuple
+
+FSC_SUCCESS = 1
+FSC_ERR_SINGULAR = 0
+FSC_ERR_BOUNDS = -1
+FSC_ERR_INVALID = -2
+
+_lib = None
+try:
+    _lib_path = os.path.join(os.getcwd(), "libfsc.so")
+    _lib = ctypes.CDLL(_lib_path)
+
+    _lib.fsc_calculate_sum8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.c_int64]
+    _lib.fsc_calculate_sum8.restype = ctypes.c_int64
+
+    _lib.fsc_heal_single8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64, ctypes.c_size_t]
+    _lib.fsc_heal_single8.restype = ctypes.c_uint8
+
+    _lib.fsc_calculate_sum64.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.c_int64]
+    _lib.fsc_calculate_sum64.restype = ctypes.c_int64
+
+    _lib.fsc_heal_single64.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64, ctypes.c_size_t]
+    _lib.fsc_heal_single64.restype = ctypes.c_int64
+
+    _lib.fsc_heal_multi64.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    _lib.fsc_heal_multi64.restype = ctypes.c_int
+
+    _lib.fsc_heal_multi8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_int32), ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    _lib.fsc_heal_multi8.restype = ctypes.c_int
+
+    _lib.fsc_batch_verify_model5.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_int64, ctypes.POINTER(ctypes.c_size_t)]
+    _lib.fsc_batch_verify_model5.restype = ctypes.c_size_t
+
+    _lib.fsc_heal_erasure8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t), ctypes.c_int64]
+    _lib.fsc_heal_erasure8.restype = ctypes.c_int
+
+    _lib.fsc_audit_log.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int64]
+    _lib.fsc_audit_log.restype = None
+
+    _lib.fsc_volume_encode8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_int64]
+    _lib.fsc_volume_encode8.restype = ctypes.c_int
+
+    _lib.fsc_volume_write8.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_int64, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
+    _lib.fsc_volume_write8.restype = ctypes.c_int
+
+    _lib.fsc_silicon_verify_gate.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64]
+    _lib.fsc_silicon_verify_gate.restype = ctypes.c_int
+
+    _lib.fsc_block_seal.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64]
+    _lib.fsc_block_seal.restype = ctypes.c_int
+
+    _lib.fsc_block_verify.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64]
+    _lib.fsc_block_verify.restype = ctypes.c_int
+
+    _lib.fsc_poly_mul_avx2.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+    _lib.fsc_poly_mul_avx2.restype = None
+
+    if hasattr(_lib, 'fsc_mesh_evaluate'):
+        _lib.fsc_mesh_evaluate.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_mesh_evaluate.restype = None
+
+    if hasattr(_lib, 'fsc_solve_modular'):
+        _lib.fsc_solve_modular.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64, ctypes.c_size_t]
+        _lib.fsc_solve_modular.restype = ctypes.c_int
+
+    if hasattr(_lib, 'fsc_silicon_parallel_verify'):
+        _lib.fsc_silicon_parallel_verify.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_int64, ctypes.c_int64]
+        _lib.fsc_silicon_parallel_verify.restype = ctypes.c_int
+
+    if hasattr(_lib, 'fsc_poly_add'):
+        _lib.fsc_poly_add.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_poly_add.restype = None
+        _lib.fsc_poly_sub.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_poly_sub.restype = None
+        _lib.fsc_poly_scalar_mul.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.c_int64, ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_poly_scalar_mul.restype = None
+
+    if hasattr(_lib, 'fsc_poly_mul_ntt'):
+        _lib.fsc_poly_mul_ntt.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t]
+        _lib.fsc_poly_mul_ntt.restype = None
+
+    if hasattr(_lib, 'fsc_localize_fault8'):
+        _lib.fsc_localize_fault8.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t, ctypes.c_int64]
+        _lib.fsc_localize_fault8.restype = ctypes.c_int
+
+except Exception as e:
+    print(f"Warning: libfsc not loaded: {e}")
+
+def is_native_available() -> bool: return _lib is not None
+
+def native_calculate_sum8(data: np.ndarray, weights: Optional[np.ndarray], modulus: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_calculate_sum8(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), modulus)
+
+def native_heal_single8(data: np.ndarray, weights: Optional[np.ndarray], target: int, modulus: int, corrupted_idx: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_heal_single8(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), target, modulus, corrupted_idx)
+
+def native_calculate_sum64(data: np.ndarray, weights: Optional[np.ndarray], modulus: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_calculate_sum64(data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), modulus)
+
+def native_heal_single64(data: np.ndarray, weights: Optional[np.ndarray], target: int, modulus: int, corrupted_idx: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_heal_single64(data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), target, modulus, corrupted_idx)
+
+def native_heal_multi64(data: np.ndarray, weights: Optional[np.ndarray], targets: np.ndarray, moduli: np.ndarray, corrupted_indices: List[int]) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    ci_array = (ctypes.c_size_t * len(corrupted_indices))(*corrupted_indices)
+    return _lib.fsc_heal_multi64(data.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), moduli.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), len(corrupted_indices), ci_array) == FSC_SUCCESS
+
+def native_heal_multi8(data: np.ndarray, weights: Optional[np.ndarray], targets: np.ndarray, moduli: np.ndarray, corrupted_indices: List[int]) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    ci_array = (ctypes.c_size_t * len(corrupted_indices))(*corrupted_indices)
+    return _lib.fsc_heal_multi8(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)) if weights is not None else None, len(data), targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), moduli.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), len(corrupted_indices), ci_array) == FSC_SUCCESS
+
+def native_batch_verify_model5(data: np.ndarray, n_blocks: int, block_size: int, modulus: int) -> List[int]:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    corrupted_array = (ctypes.c_size_t * n_blocks)()
+    count = _lib.fsc_batch_verify_model5(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_blocks, block_size, modulus, corrupted_array)
+    return [corrupted_array[i] for i in range(count)]
+
+def native_heal_erasure8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, bad_indices: List[int], modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    bad_array = (ctypes.c_size_t * len(bad_indices))(*bad_indices)
+    return _lib.fsc_heal_erasure8(volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_blocks, block_size, k_parity, len(bad_indices), bad_array, modulus) == FSC_SUCCESS
+
+def native_audit_log(event_type: str, index: int, magnitude: int):
+    if _lib: _lib.fsc_audit_log(event_type.encode(), index, magnitude)
+
+def native_volume_encode8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_volume_encode8(volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_blocks, block_size, k_parity, modulus) == FSC_SUCCESS
+
+def native_volume_write8(volume_data: np.ndarray, n_blocks: int, block_size: int, k_parity: int, modulus: int, user_data: bytes) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    ud_array = (ctypes.c_uint8 * len(user_data)).from_buffer_copy(user_data)
+    return _lib.fsc_volume_write8(volume_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_blocks, block_size, k_parity, modulus, ud_array, len(user_data)) == FSC_SUCCESS
+
+def native_silicon_verify_gate(data: np.ndarray, rom_weights: np.ndarray, target: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_silicon_verify_gate(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), rom_weights.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), len(data), target, modulus) != 0
+
+def native_block_seal(block: np.ndarray, block_id: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_block_seal(block.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), len(block), block_id, modulus) == FSC_SUCCESS
+
+def native_block_verify(block: np.ndarray, block_id: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_block_verify(block.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), len(block), block_id, modulus) != 0
+
+def native_poly_mul(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_mul_avx2(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
+    return res
+
+def native_mesh_evaluate(payload: bytes, k_data: int, modulus: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    res = np.zeros(k_data, dtype=np.int64)
+    p_array = (ctypes.c_uint8 * len(payload)).from_buffer_copy(payload)
+    _lib.fsc_mesh_evaluate(p_array, len(payload), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), k_data, modulus)
+    return res
+
+def native_solve_modular(A: np.ndarray, B: np.ndarray, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = A.shape[0]; rhs_cols = B.shape[1] if B.ndim > 1 else 1
+    return _lib.fsc_solve_modular(A.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), B.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, modulus, rhs_cols) == FSC_SUCCESS
+
+def native_silicon_parallel_verify(data: np.ndarray, rom_weights: np.ndarray, target: int, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_silicon_parallel_verify(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), rom_weights.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), len(data), target, modulus) != 0
+
+def native_poly_add(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_add(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
+    return res
+
+def native_poly_sub(a: np.ndarray, b: np.ndarray, q: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_sub(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
+    return res
+
+def native_poly_scalar_mul(a: np.ndarray, scalar: int, q: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_scalar_mul(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), scalar, res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n, q)
+    return res
+
+def native_poly_mul_ntt(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    _lib.fsc_poly_mul_ntt(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n)
+    return res
+
+def native_localize_fault8(syndromes: np.ndarray, modulus: int) -> int:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_localize_fault8(syndromes.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), len(syndromes), modulus)
+
+def native_xor_reduce(data: np.ndarray, vector_len: int) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n_vectors = len(data) // vector_len
+    res = np.zeros(vector_len, dtype=np.uint8)
+    _lib.fsc_xor_reduce.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint8)]
+    _lib.fsc_xor_reduce.restype = None
+    _lib.fsc_xor_reduce(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), n_vectors, vector_len, res.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)))
+    return res
+
+def native_poly_inv_ntt(a: np.ndarray) -> np.ndarray:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    n = len(a); res = np.zeros(n, dtype=np.int64)
+    if hasattr(_lib, 'fsc_poly_inv_ntt'):
+        _lib.fsc_poly_inv_ntt.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.c_size_t]
+        _lib.fsc_poly_inv_ntt.restype = None
+        _lib.fsc_poly_inv_ntt(a.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), res.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), n)
+    return res
+
+def native_heal_blind8(data: np.ndarray, targets: np.ndarray, modulus: int) -> bool:
+    if not _lib: raise RuntimeError("Native library not loaded")
+    return _lib.fsc_heal_blind8(data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), targets.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), len(data), len(targets), modulus) == FSC_SUCCESS
+
+--- tests/verify_native_blind_healing.py ---
+import sys
+import os
+import numpy as np
+sys.path.append(os.getcwd())
+
+from fsc.core.fsc_native import native_heal_blind8
+
+def test_blind_healing():
+    print("Testing Native Blind Multi-Fault Healing...")
+    modulus = 251
+    n = 20
+    k = 4 # Should handle up to 2 blind errors
+
+    # Create original data
+    np.random.seed(42)
+    original = np.random.randint(0, 251, n, dtype=np.uint8)
+
+    # Calculate targets: sum(data[i] * (i+1)^j)
+    targets = np.zeros(k, dtype=np.int64)
+    for j in range(k):
+        targets[j] = sum(int(original[i]) * pow(i + 1, j, modulus) for i in range(n)) % modulus
+
+    # Corrupt data (2 indices)
+    corrupted = original.copy()
+    corrupted[3] = (int(corrupted[3]) + 10) % modulus
+    corrupted[12] = (int(corrupted[12]) + 50) % modulus
+
+    print(f"  Corrupted indices: [3, 12]")
+    print(f"  Attempting native blind recovery (k={k})...")
+
+    # The implementation adds BM[i], which is s[r] = targets[j] - actual
+    # If we add 10 to data[3], actual increases by 10 * (3+1)^j
+    # so s[j] = -10 * (3+1)^j.
+    # To fix it, we should subtract 10.
+    # My C code does: data[pos] = (data[pos] + BM) % modulus.
+    # If BM = -10, then data[pos] = data[pos] - 10, which is correct.
+
+    # Wait, in my test:
+    # corrupted[3] = (original[3] + 10) % modulus
+    # actual[j] = (sum(original[i]*(i+1)^j) + 10*(3+1)^j) % modulus
+    # targets[j] = sum(original[i]*(i+1)^j) % modulus
+    # s[j] = (targets[j] - actual[j]) % modulus = -10*(3+1)^j % modulus
+    # BM for pos 3 will be -10.
+    # data[3] = (corrupted[3] + BM) % modulus = (original[3] + 10 - 10) % modulus = original[3].
+    # YES, adding BM is correct if BM is the error value (target - actual).
+
+    # Let's try with 1 error first to be sure
+    corrupted_1 = original.copy()
+    corrupted_1[5] = (int(corrupted_1[5]) + 20) % modulus
+    print(f"  Single fault test (idx 5)...")
+    native_heal_blind8(corrupted_1, targets, modulus)
+    if np.array_equal(corrupted_1, original):
+        print("✓ Single Blind Recovery Successful")
+    else:
+        print("✗ Single Blind Recovery Failed")
+        print(f"  Original:  {original}")
+        print(f"  Recovered: {corrupted_1}")
+
+    # Now the 2 error test
+    success = native_heal_blind8(corrupted, targets, modulus)
+
+    if success:
+        if np.array_equal(corrupted, original):
+            print("✓ Double Blind Recovery Successful and Correct")
+        else:
+            print("✗ Double Blind Recovery returned Success but data is incorrect")
+            print(f"  Original:  {original}")
+            print(f"  Recovered: {corrupted}")
+    else:
+        print("✗ Double Blind Recovery Failed")
+
+if __name__ == "__main__":
+    test_blind_healing()
