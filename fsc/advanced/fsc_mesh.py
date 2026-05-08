@@ -50,14 +50,48 @@ class ConsensusManifold:
             secret = (secret + y_vals[i] * li) % self.modulus
         return secret
 
+
+class ManifoldRoutingTable:
+    """
+    Kademlia-style routing table using manifold distance.
+    Organizes nodes into 'buckets' based on distance to local coordinates.
+    """
+    def __init__(self, local_coords: np.ndarray, k_size: int = 5):
+        self.local_coords = local_coords
+        self.k_size = k_size
+        self.buckets = {} # distance_range -> [MeshNode]
+
+    def _get_bucket_idx(self, distance: float) -> int:
+        if distance == 0: return 0
+        return int(np.log2(distance * 100 + 1))
+
+    def add_node(self, node):
+        dist = np.linalg.norm(self.local_coords - node.coords)
+        b_idx = self._get_bucket_idx(dist)
+        if b_idx not in self.buckets: self.buckets[b_idx] = []
+        if len(self.buckets[b_idx]) < self.k_size:
+            if node.node_id not in [n.node_id for n in self.buckets[b_idx]]:
+                self.buckets[b_idx].append(node)
+
+    def find_closest(self, target_coords: np.ndarray, count: int = 3):
+        all_nodes = []
+        for b in self.buckets.values(): all_nodes.extend(b)
+        return sorted(all_nodes, key=lambda n: np.linalg.norm(n.coords - target_coords))[:count]
+
 class TopologicalSharder:
     def __init__(self, dimension: int = 3, modulus: Optional[int] = None):
         self.nodes = []
+        self.routing_tables = {} # node_id -> ManifoldRoutingTable
         self.dimension = dimension
         self.modulus = modulus or SovereignConfig.get_manifold_params()["modulus"]
 
     def add_node(self, node: MeshNode):
         self.nodes.append(node)
+        self.routing_tables[node.node_id] = ManifoldRoutingTable(node.coords)
+        for other in self.nodes:
+            if other.node_id != node.node_id:
+                self.routing_tables[node.node_id].add_node(other)
+                self.routing_tables[other.node_id].add_node(node)
 
     def _hash_to_manifold(self, data_id: str) -> np.ndarray:
         h = hashlib.sha256(data_id.encode()).digest()
@@ -69,7 +103,19 @@ class TopologicalSharder:
 
     def find_nodes_for_data(self, data_id: str, k: int = 3) -> List[MeshNode]:
         target = self._hash_to_manifold(data_id)
-        return sorted(self.nodes, key=lambda n: n.distance_to(target))[:k]
+        if not self.nodes: return []
+        # Simulate iterative lookup starting from the first node
+        start_node = self.nodes[0]
+        current_closest = self.routing_tables[start_node.node_id].find_closest(target, k)
+
+        # Iteratively refine (simulation of network hops)
+        for _ in range(3):
+            next_candidates = []
+            for n in current_closest:
+                next_candidates.extend(self.routing_tables[n.node_id].find_closest(target, k))
+            unique_candidates = {n.node_id: n for n in next_candidates}.values()
+            current_closest = sorted(list(unique_candidates), key=lambda n: n.distance_to(target))[:k]
+        return current_closest
 
     def shard_resilient(self, data_id: str, payload: bytes, k_data: int = 3, m_parity: int = 2) -> Dict[str, bytes]:
         total_shards = k_data + m_parity

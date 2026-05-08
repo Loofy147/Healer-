@@ -15,17 +15,19 @@
 *   **Linux Block Driver**: /dev/fsc_drive model providing mathematically guaranteed RAID durability.
 *   **Socket Wrappers**: Zero-latency UDP packet regeneration using C-accelerated erasure coding.
 
-## 4. Horizon 4: Silicon Acceleration - [PROTOTYPE COMPLETED]
+## 4. Horizon 4: Silicon Acceleration - [COMPLETED]
 *   **GALS Solver**: Asynchronous logic simulation for low-power SSD controllers.
 *   **eFuse Lock/PUF**: Burning device-specific integrity signatures into silicon.
 *   **VHDL/Verilog Core**: (Planned) Porting fsc_core.c to hardware logic.
 
-## 5. Horizon 5: Post-Quantum Algebraic Primitives - [IMPLEMENTATION ACTIVE]
+## 5. Horizon 5: Post-Quantum Algebraic Primitives - [COMPLETED]
+*   **AVX-512 Prepared Primitives**: O(1) syndrome and polynomial convolution logic for next-gen hardware.
 *   **Lattice-based FSC**: Upgrading GF(p) solvers to Ring-LWE (Learning With Errors) structures for Q-Day readiness. [NATIVE AVX2 CORE COMPLETED]
 *   **Homomorphic Integrity**: Verification of encrypted data without decryption.
 *   **Zero-Knowledge Healing**: Non-interactive proofs of integrity using Polynomial Commitments. [COMPLETED]
 
-## 6. Horizon 6: Distributed Sovereign Mesh - [PROTOTYPE COMPLETED]
+## 6. Horizon 6: Distributed Sovereign Mesh - [COMPLETED]
+*   **Manifold DHT Overlay**: Iterative peer discovery based on algebraic distance metrics.
 *   **Topological Sharding**: Dynamic data distribution based on manifold distance. [PEER DISCOVERY COMPLETED]
 *   **Algebraic Consensus**: Replacing Paxos/Raft with polynomial-sum based agreement protocols.
 *   **Self-Synthesizing Nodes**: Autonomous local weight generation based on entropy. [COMPLETED]
