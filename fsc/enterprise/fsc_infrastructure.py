@@ -9,15 +9,17 @@ from typing import List, Dict, Optional, Any
 from fsc.core.fsc_native import is_native_available
 from fsc.enterprise.fsc_commercial import fsc_enterprise_audit
 from fsc.advanced.fsc_mesh import MeshNode, ConsensusManifold, TopologicalSharder
+from fsc.enterprise.fsc_services import ServiceRegistry
 
 class SovereignOrchestrator:
     """
     Automated orchestration for distributed sovereign infrastructure.
     Manages shard migration and manifold density.
     """
-    def __init__(self, infrastructure_id: str, sharder: TopologicalSharder):
+    def __init__(self, infrastructure_id: str, sharder: TopologicalSharder, registry: Optional[ServiceRegistry] = None):
         self.infrastructure_id = infrastructure_id
         self.sharder = sharder
+        self.registry = registry
         self.volumes: Dict[str, Any] = {}
 
     def migrate_shards(self, data_id: str, source_node_id: str, target_node_id: str):
@@ -44,12 +46,13 @@ class SovereignOrchestrator:
         return True
 
 class SovereignInfrastructure:
-    def __init__(self, infrastructure_id: str):
+    def __init__(self, infrastructure_id: str, registry: Optional[ServiceRegistry] = None):
         self.infrastructure_id = infrastructure_id
+        self.registry = registry
         self.volumes: Dict[str, Any] = {}
         self.nodes: List[MeshNode] = []
         self.sharder = TopologicalSharder()
-        self.orchestrator = SovereignOrchestrator(infrastructure_id, self.sharder)
+        self.orchestrator = SovereignOrchestrator(infrastructure_id, self.sharder, registry)
         self.start_time = time.time()
         self._consensus = ConsensusManifold(n_nodes=10, threshold=3)
 
@@ -98,6 +101,14 @@ class SovereignInfrastructure:
 
     def run_maintenance_cycle(self):
         print(f"[INFRASTRUCTURE] Starting maintenance cycle for {self.infrastructure_id}")
+
+        if self.registry:
+            active_ids = self.registry.get_active_contracts()
+            if active_ids:
+                print(f"  [INFRASTRUCTURE] Prioritizing {len(active_ids)} active storage contracts.")
+                for data_id in active_ids:
+                    fsc_enterprise_audit("PRIORITY_AUDIT", {"data_id": data_id})
+
         v_results = self.orchestrate_volume_health()
         n_results = self.coordinate_node_health()
         self.orchestrator.balance_manifold()

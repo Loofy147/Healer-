@@ -18,7 +18,7 @@ class ManifoldGovernance:
 
     def propose_parameter_change(self, proposer: str, parameter: str, new_value: int) -> int:
         """Proposes a change to a network parameter."""
-        # Simple rule: proposer must have some tokens
+        # Minimum governance stake
         if self.ledger.get_balance(proposer) < 100:
             return -1
 
@@ -27,7 +27,7 @@ class ManifoldGovernance:
             "proposer": proposer,
             "parameter": parameter,
             "new_value": new_value,
-            "votes": {}, # voter -> choice (bool)
+            "votes": {}, # voter -> (choice, weight)
             "status": "ACTIVE"
         }
         self.proposal_count += 1
@@ -56,9 +56,19 @@ class ManifoldGovernance:
         if yes_votes > no_votes:
             prop["status"] = "PASSED"
             print(f"[GOVERNANCE] Proposal {proposal_id} PASSED ({yes_votes} vs {no_votes}).")
-            # Apply the change
-            if prop["parameter"] == "modulus":
-                self.ledger.modulus = prop["new_value"]
+
+            # Apply the changes to the ledger
+            param = prop["parameter"]
+            val = prop["new_value"]
+
+            if param == "modulus":
+                self.ledger.modulus = val
+            elif param == "base_fee":
+                self.ledger.base_fee = val
+            elif param == "reward_multiplier":
+                self.ledger.reward_multiplier = val
+            elif param == "min_stake":
+                self.ledger.staking.min_stake = val
             return True
         else:
             prop["status"] = "REJECTED"
@@ -71,7 +81,8 @@ if __name__ == "__main__":
     l.mint("ALICE", 1000); l.mint("BOB", 500)
 
     gov = ManifoldGovernance(l)
-    pid = gov.propose_parameter_change("ALICE", "modulus", 65537)
+    pid = gov.propose_parameter_change("ALICE", "base_fee", 5)
     gov.cast_vote("ALICE", pid, True)
     gov.cast_vote("BOB", pid, False)
     gov.finalize_proposal(pid)
+    print(f"New base fee: {l.base_fee}")

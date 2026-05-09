@@ -18,13 +18,52 @@ def deterministic_hash(val: Any, modulus: int) -> int:
     h = hashlib.sha256(str(val).encode()).hexdigest()
     return int(h, 16) % modulus
 
+class StakingManager:
+    """
+    Manages node collateral and handles slashing for failed integrity audits.
+    """
+    def __init__(self, ledger: 'IndustrialManifoldLedger', min_stake: int = 1000):
+        self.ledger = ledger
+        self.min_stake = min_stake
+        self.stakes: Dict[str, int] = {}
+
+    def stake(self, address: str, amount: int) -> bool:
+        if self.ledger.get_balance(address) < amount:
+            return False
+        # Deduct from balance, add to stake
+        self.ledger.mint(address, -amount)
+        self.stakes[address] = self.stakes.get(address, 0) + amount
+        print(f"  [STAKING] {address} staked {amount} MNF (Total: {self.stakes[address]})")
+        return True
+
+    def unstake(self, address: str, amount: int) -> bool:
+        current_stake = self.stakes.get(address, 0)
+        if current_stake < amount:
+            return False
+        self.stakes[address] -= amount
+        self.ledger.mint(address, amount)
+        print(f"  [STAKING] {address} unstaked {amount} MNF")
+        return True
+
+    def slash(self, address: str, penalty: int):
+        current_stake = self.stakes.get(address, 0)
+        actual_penalty = min(current_stake, penalty)
+        self.stakes[address] -= actual_penalty
+        print(f"  [SLASH] {address} slashed for {actual_penalty} MNF!")
+
+    def is_eligible(self, address: str) -> bool:
+        return self.stakes.get(address, 0) >= self.min_stake
+
 class IndustrialManifoldLedger:
     """
     An industrially-hardened ledger using Structural FSC for its internal state.
     Every balance is protected by 2D algebraic constraints.
     """
-    def __init__(self, n_nodes: int = 10, threshold: int = 4, modulus: int = 12289, max_accounts: int = 16):
+    def __init__(self, n_nodes: int = 10, threshold: int = 4, modulus: int = 12289, max_accounts: int = 16, base_fee: int = 1, reward_multiplier: int = 1):
         self.modulus = modulus
+        self.base_fee = base_fee
+        self.reward_multiplier = reward_multiplier
+        self.staking = StakingManager(self)
         self.consensus = ConsensusManifold(n_nodes, threshold, modulus)
         self.history: List[Dict[str, Any]] = []
         self.verifier = LatticeIntegrity(q=modulus)
@@ -58,7 +97,8 @@ class IndustrialManifoldLedger:
         self.history.append({"op": "MINT", "to": address, "amount": amount})
 
     def process_transaction(self, sender: str, recipient: str, amount: int, seal: np.ndarray) -> bool:
-        if self.get_balance(sender) < amount: return False
+        total_deduction = amount + self.base_fee
+        if self.get_balance(sender) < total_deduction: return False
 
         recipient_hash = deterministic_hash(recipient, self.modulus)
         tx_payload = np.array([amount, recipient_hash], dtype=np.int64)
@@ -74,7 +114,7 @@ class IndustrialManifoldLedger:
         sr, sc = self._get_coords(sender)
         rr, rc = self._get_coords(recipient)
         raw = self.table.data[:self.dim, :self.dim].copy()
-        raw[sr, sc] = (raw[sr, sc] - amount) % self.modulus
+        raw[sr, sc] = (raw[sr, sc] - total_deduction) % self.modulus
         raw[rr, rc] = (raw[rr, rc] + amount) % self.modulus
         self.table.set_data(raw.tolist())
 
@@ -83,8 +123,8 @@ class IndustrialManifoldLedger:
 
     def commit_healing_reward(self, miner_address: str, proof: str, original_hash: str):
         healer = ZKHealer(modulus=self.modulus)
-        if healer.verify_proof(proof, original_hash):
-            reward = 100
+        if self.staking.is_eligible(miner_address) and healer.verify_proof(proof, original_hash):
+            reward = 100 * self.reward_multiplier
             self.mint(miner_address, reward)
             return True
         return False
@@ -102,6 +142,7 @@ class PersistentManifoldLedger(IndustrialManifoldLedger):
         super().__init__(**kwargs)
         self.filename = filename
         self.map_filename = filename + ".map"
+        self.staking_filename = filename + ".staking"
         self._load_from_disk()
 
     def _load_from_disk(self):
@@ -111,6 +152,9 @@ class PersistentManifoldLedger(IndustrialManifoldLedger):
                 self.address_map = data["address_map"]
                 self.reverse_map = data["reverse_map"]
                 self.next_idx = data["next_idx"]
+            if os.path.exists(self.staking_filename):
+                with open(self.staking_filename, "r") as f:
+                    self.staking.stakes = json.load(f)
             with open(self.filename, "rb") as f:
                 raw_bytes = f.read()
                 self.table.data = np.frombuffer(raw_bytes, dtype=np.int64).reshape(self.table.data.shape).copy()
@@ -120,6 +164,8 @@ class PersistentManifoldLedger(IndustrialManifoldLedger):
         with open(self.filename, "wb") as f: f.write(self.table.data.tobytes())
         with open(self.map_filename, "w") as f:
             json.dump({"address_map": self.address_map, "reverse_map": self.reverse_map, "next_idx": self.next_idx}, f)
+        with open(self.staking_filename, "w") as f:
+            json.dump(self.staking.stakes, f)
 
     def mint(self, address: str, amount: int):
         super().mint(address, amount)
@@ -132,6 +178,16 @@ class PersistentManifoldLedger(IndustrialManifoldLedger):
 
     def commit_healing_reward(self, miner_address: str, proof: str, original_hash: str):
         success = super().commit_healing_reward(miner_address, proof, original_hash)
+        if success: self._sync_to_disk()
+        return success
+
+    def stake(self, address: str, amount: int) -> bool:
+        success = self.staking.stake(address, amount)
+        if success: self._sync_to_disk()
+        return success
+
+    def unstake(self, address: str, amount: int) -> bool:
+        success = self.staking.unstake(address, amount)
         if success: self._sync_to_disk()
         return success
 
