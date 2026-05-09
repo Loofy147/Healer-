@@ -11,7 +11,7 @@ from typing import List, Any, Optional, Tuple
 from collections import defaultdict
 from itertools import combinations
 from fsc.core.fsc_framework import solve_linear_system, gf_inv
-from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_single8, native_heal_multi64, native_heal_multi8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
+from fsc.core.fsc_native import is_native_available, native_calculate_sum8, native_calculate_sum64, native_heal_single64, native_heal_single8, native_heal_multi64, native_heal_multi8, native_heal_blind8, native_audit_log, FSC_SUCCESS, FSC_ERR_SINGULAR, FSC_ERR_BOUNDS, FSC_ERR_INVALID
 
 def fsc_audit_log(event_type: str, index: int, magnitude: int):
     if is_native_available(): native_audit_log(event_type, index, magnitude)
@@ -75,7 +75,7 @@ class FSCWriter:
             for c in self.schema.constraints:
                 if c.target is None and not c.is_fiber: c.stored_field_idx = si_ptr; si_ptr += 1
                 c_data += struct.pack(">B q b q", 1 if c.is_fiber else 0, c.target or 0, c.stored_field_idx, c.modulus or 0)
-                c_data += struct.pack(">" + "b"*nd, *[int(w) for w in c.weights[:nd]])
+                c_data += struct.pack(">" + "B"*nd, *[int(w) for w in c.weights[:nd]])
             f.write(c_data)
             all_fields = list(self.schema.fields)
             for i in range(ns): all_fields.append(FSCField(f"stored_{i}", "INT64"))
@@ -143,7 +143,7 @@ class FSCReader:
                 ptr = 0
                 for _ in range(nc):
                     ct, tg, si, mo = struct.unpack(">B q b q", c_raw[ptr:ptr+18]); ptr += 18
-                    weights = list(struct.unpack(">" + "b"*nd, c_raw[ptr:ptr+nd])); ptr += nd
+                    weights = list(struct.unpack(">" + "B"*nd, c_raw[ptr:ptr+nd])); ptr += nd
                     c = FSCConstraint(np.array(weights, dtype=np.int64), tg if ct==1 or tg!=0 or si==-1 else None, is_fiber=(ct==1), modulus=mo if mo!=0 else None)
                     c.stored_field_idx = si; self.constraints.append(c)
 
@@ -241,6 +241,24 @@ class FSCReader:
                         except: continue
             return FSC_ERR_INVALID
 
+
+        p_main = int(self._moduli[failed[0]])
+        if p_main > 0 and er_indices is None and is_native_available() and len(failed) >= 2:
+            if all(int(self._moduli[f_idx]) == p_main for f_idx in failed):
+                match = True
+                for j_idx, f_idx in enumerate(failed):
+                    weights = self.constraints[f_idx].weights[:len(self.data_fields)]
+                    for i, w in enumerate(weights):
+                        if int(w) % p_main != pow(i + 1, j_idx, p_main):
+                            match = False; break
+                    if not match: break
+                if match:
+                    targets_subset = np.array([self.constraints[f_idx].target if self.constraints[f_idx].target is not None else self.records[r_idx, self.constraints[f_idx].stored_field_idx] for f_idx in failed], dtype=np.int64)
+                    test_data = data_np[:len(self.data_fields)].astype(np.uint8)
+                    if native_heal_blind8(test_data, targets_subset, p_main):
+                        if self._verify_record(r_idx, test_data.astype(np.int64)):
+                            self.records[r_idx, :len(self.data_fields)] = test_data.astype(np.int64)
+                            return FSC_SUCCESS
         i1 = failed[0]; p1 = int(self._moduli[i1]); s1 = syndromes[i1]
         w1 = self._weight_matrix[i1]
 
