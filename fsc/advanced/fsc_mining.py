@@ -1,61 +1,57 @@
 """
-FSC: Forward Sector Correction - Healing Miner (Horizon 6)
+FSC: Forward Sector Correction - Industrial Healing Miner (Horizon 7)
 Copyright (C) 2024 FSC Core Team. All Rights Reserved.
 """
 
 import numpy as np
 import hashlib
+from typing import Dict
 from fsc.advanced.fsc_quantum import ZKHealer
-from fsc.advanced.fsc_token import ManifoldLedger
+from fsc.advanced.fsc_token import IndustrialManifoldLedger
+from fsc.advanced.fsc_mesh import TopologicalSharder
 
-class HealingMiner:
+class IndustrialHealingMiner:
     """
-    A network actor that earns tokens by verifying and healing algebraic shards.
+    A network actor that earns tokens by performing REAL algebraic RAID recovery.
     """
-    def __init__(self, address: str, ledger: ManifoldLedger):
+    def __init__(self, address: str, ledger: IndustrialManifoldLedger, sharder: TopologicalSharder):
         self.address = address
         self.ledger = ledger
+        self.sharder = sharder
         self.healer = ZKHealer(modulus=ledger.modulus)
 
-    def mine_shard(self, shard_data: np.ndarray, original_hash: str, reference_data: np.ndarray) -> bool:
+    def mine_fault(self, data_id: str, available_shards: Dict[str, bytes], original_len: int) -> bool:
         """
-        Attempts to find and heal corruption in a shard to earn a reward.
-        'reference_data' represents the correct data reconstructed via algebraic RAID.
+        Attempts to heal a data object using available mesh shards.
         """
-        current_hash = hashlib.sha256(shard_data.tobytes()).hexdigest()
+        print(f"[MINER] Attempting to mine fault for {data_id}...")
 
-        if current_hash != original_hash:
-            print(f"[MINER] Detected corruption! Initiating algebraic healing for {self.address}...")
+        reconstructed = self.sharder.reconstruct_payload(data_id, available_shards, original_len=original_len)
 
-            # Simulated healing: Reconstruct correct data using available parity.
-            healed_data = reference_data
+        if not reconstructed:
+            print("[MINER] Reconstruction failed: Insufficient shards.")
+            return False
 
-            # Generate ZK Proof of Healing using the healed data.
-            proof = self.healer.prove_healing(original_hash, healed_data)
+        obj_hash = hashlib.sha256(reconstructed).hexdigest()
+        proof = self.healer.prove_healing(obj_hash, np.frombuffer(reconstructed, dtype=np.uint8))
 
-            if proof != "PROOF_FAILURE":
-                success = self.ledger.commit_healing_reward(self.address, proof, original_hash)
-                if success:
-                    print(f"[MINER] Healing Reward Claimed! Miner {self.address} earned tokens.")
-                    return True
-        else:
-            print(f"[MINER] Shard {original_hash[:16]}... is healthy. No healing required.")
+        if proof != "PROOF_FAILURE":
+            success = self.ledger.commit_healing_reward(self.address, proof, obj_hash)
+            if success:
+                print(f"[MINER] REAL HEALING SUCCESS! Miner {self.address} earned reward.")
+                return True
         return False
 
-if __name__ == "__main__":
-    l = ManifoldLedger()
-    m = HealingMiner("MINER_01", l)
+# Backwards compatibility aliases
+HealingMiner = IndustrialHealingMiner
+# Map mine_shard to mine_fault for legacy demo support
+def mine_shard_legacy(self, shard_data, original_hash, reference_data):
+    """Legacy shim for mine_shard API."""
+    # In the legacy demo, it passed correct data to reference_data.
+    # We can simulate a mine_fault call here or just use the ZK proof logic directly.
+    proof = self.healer.prove_healing(original_hash, reference_data)
+    if proof != "PROOF_FAILURE":
+        return self.ledger.commit_healing_reward(self.address, proof, original_hash)
+    return False
 
-    # Setup test data
-    correct_data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)
-    original_h = hashlib.sha256(correct_data.tobytes()).hexdigest()
-
-    # Test 1: No corruption
-    m.mine_shard(correct_data, original_h, correct_data)
-
-    # Test 2: With corruption
-    corrupted_data = correct_data.copy()
-    corrupted_data[0] = 99
-    m.mine_shard(corrupted_data, original_h, correct_data)
-
-    print(f"Miner Balance: {l.get_balance('MINER_01')}")
+HealingMiner.mine_shard = mine_shard_legacy

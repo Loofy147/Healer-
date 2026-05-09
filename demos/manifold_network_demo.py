@@ -1,13 +1,13 @@
 """
-FSC: The Manifold Network - Sovereign Decentralized Launch Demo
+FSC: The Manifold Network - Sovereign Decentralized Launch Demo (Synchronized)
 Showcasing "Healing-as-Mining" with ZK-Proofs and Algebraic Consensus.
 """
 
 import numpy as np
 import hashlib
 from fsc.advanced.fsc_mesh import MeshNode, TopologicalSharder
-from fsc.advanced.fsc_token import ManifoldLedger
-from fsc.advanced.fsc_mining import HealingMiner
+from fsc.advanced.fsc_token import IndustrialManifoldLedger, ManifoldNetworkNode
+from fsc.advanced.fsc_mining import IndustrialHealingMiner
 from fsc.core.fsc_native import is_native_available
 
 def run_demo():
@@ -17,7 +17,7 @@ def run_demo():
 
     # 1. Initialize Sovereign Infrastructure
     print("\n[1] Initializing Manifold Ledger & Sharder...")
-    ledger = ManifoldLedger()
+    ledger = IndustrialManifoldLedger()
     sharder = TopologicalSharder()
 
     # Add nodes to the mesh
@@ -58,20 +58,14 @@ def run_demo():
 
     # 4. Healing-as-Mining
     print("\n[4] HEALING-AS-MINING: Node starts scrubbing...")
-    miner = HealingMiner(target_node_id, ledger)
+    miner = IndustrialHealingMiner(target_node_id, ledger, sharder)
 
-    # The miner detects the fault.
-    # In a real system, the miner would reconstruct the correct shard
-    # using FSC RAID from other nodes.
-    # Here we simulate the successful reconstruction by passing 'correct_shard_bytes'.
-
-    correct_shard_arr = np.frombuffer(correct_shard_bytes, dtype=np.uint8)
-    original_shard_hash = hashlib.sha256(correct_shard_bytes).hexdigest()
+    # In this demo, the miner uses whatever shards are available to reconstruct.
+    # We provide all 5 shards (including 1 corrupted) and let FSC RAID handle it.
+    available_shards = {n.node_id: n.storage[data_id] for n in nodes if data_id in n.storage}
 
     # Miner performs the healing and submits ZK Proof
-    miner.mine_shard(np.frombuffer(corrupted_data, dtype=np.uint8),
-                    original_shard_hash,
-                    correct_shard_arr)
+    success = miner.mine_fault(data_id, available_shards, len(payload))
 
     # 5. Verify Economic Reward
     print("\n[5] VERIFYING REWARD...")
